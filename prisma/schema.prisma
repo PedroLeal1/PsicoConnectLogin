@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PSYCHOLOGIST
+  PATIENT
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CANCELLED
+}
+
+enum PendingActionType {
+  CANCEL_APPOINTMENT
+}
+
+enum PendingActionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id           String @id @default(uuid())
+  name         String
+  email        String @unique
+  passwordHash String
+  role         Role
+
+  psychologist Psychologist?
+  patient      Patient?
+
+  // 👉 adicione esta linha (back-relation):
+  pendingActionsCreated PendingAction[] @relation("UserCreatedPendingActions")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Psychologist {
+  id           String        @id @default(uuid())
+  userId       String        @unique
+  user         User          @relation(fields: [userId], references: [id])
+  appointments Appointment[] @relation("PsychologistAppointments")
+}
+
+model Patient {
+  id           String        @id @default(uuid())
+  userId       String        @unique
+  user         User          @relation(fields: [userId], references: [id])
+  appointments Appointment[] @relation("PatientAppointments")
+}
+
+model Appointment {
+  id             String            @id @default(uuid())
+  dateTime       DateTime
+  status         AppointmentStatus @default(SCHEDULED)
+  patientId      String
+  patient        Patient           @relation("PatientAppointments", fields: [patientId], references: [id])
+  psychologistId String
+  psychologist   Psychologist      @relation("PsychologistAppointments", fields: [psychologistId], references: [id])
+  pendingActions PendingAction[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([dateTime])
+  @@index([psychologistId, dateTime])
+  @@index([patientId, dateTime])
+}
+
+model PendingAction {
+  id            String              @id @default(uuid())
+  type          PendingActionType
+  status        PendingActionStatus @default(PENDING)
+  token         String              @unique
+  appointmentId String
+  appointment   Appointment         @relation(fields: [appointmentId], references: [id])
+
+  createdByUserId String
+  // 👉 nomeie a relação para casar com o lado do User:
+  createdBy       User   @relation(name: "UserCreatedPendingActions", fields: [createdByUserId], references: [id])
+
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+}
