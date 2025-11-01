@@ -1,26 +1,321 @@
-@import "tailwindcss";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+    background-color: #f0f4f8; 
 }
+
+.public-page-wrapper {
+    width: 100%;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 0;
+}
+
+.login-container {
+    display: flex;
+    max-width: 900px;
+    width: 90%;
+    min-height: 550px; 
+    background-color: #ffffff;
+    border-radius: 20px;
+    box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.1);
+    overflow: hidden; 
+}
+
+.login-panel-left {
+    flex: 1; 
+    background-image: linear-gradient(to right, #1C4BB3, #3F7AFD);
+    color: white;
+    padding: 50px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center; 
+}
+
+.logo-container {
+    display: flex;
+    align-items: center;
+    margin-bottom: 60px;
+}
+
+.logo-img {
+    width: 130px;
+    height: 130px;
+    margin-right: -20px;
+    margin-left: -20px;
+}
+
+.logo-container h1 {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 35px;
+    font-weight: 700;
+    line-height: 85%; 
+    margin-top: 10px;
+}
+
+.tagline {
+    font-family: 'Poppins', sans-serif;
+    font-size: 28px;
+    font-weight: 700; 
+    line-height: 115%; 
+    margin-bottom: 80px;
+}
+
+.login-panel-right {
+    flex: 1.2; 
+    padding: 50px 60px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center; 
+    background-color: #ffffff;
+}
+
+.login-panel-right .logo-container {
+    display: none; 
+}
+
+.login-panel-right h2 {
+    font-size: 32px;
+    font-weight: 700;
+    color: #001E5E; 
+    margin-bottom: 25px;
+}
+
+#login-form,
+#cadastro-form {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+#login-form label,
+#cadastro-form label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 4px;
+}
+
+#login-form input,
+#cadastro-form input[type="text"],
+#cadastro-form input[type="email"],
+#cadastro-form input[type="password"] {
+    width: 100%;
+    padding: 12px 15px;
+    border: 1px solid #dcdcdc;
+    border-radius: 8px;
+    margin-bottom: 3px;
+    font-size: 15px;
+    outline-color: #528CFF;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+#login-form input.error,
+#cadastro-form input.error {
+    border-color: #D93025; 
+    background-color: #fdefeee8; 
+}
+
+.error-message {
+    color: #D93025;
+    font-size: 12px;
+    font-weight: 500;
+    display: block;
+    height: 18px;
+    line-height: 1.2;
+    margin-bottom: 8px;
+}
+
+.forgot-password {
+    font-size: 13px;
+    color: #001E5E;
+    text-decoration: none;
+    margin-bottom: 25px;
+    font-weight: 600;
+    transition: color 0.2s, transform 0.05s ease;
+}
+.forgot-password:hover {
+    color: #528CFF;
+}
+
+.role-selector {
+    display: flex;
+    gap: 20px;
+    margin: 10px 0 10px;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 500;
+    color: #333;
+}
+
+.role-selector input[type="radio"] {
+    display: none;
+}
+
+.radio-label::before {
+    content: '';
+    width: 18px;
+    height: 18px;
+    border: 2px solid #dcdcdc;
+    border-radius: 50%;
+    margin-right: 8px;
+    transition: all 0.2s ease;
+}
+
+.role-selector input[type="radio"]:checked + .radio-label::before {
+    border-color: #528CFF;
+    background-color: #528CFF;
+    box-shadow: 0 0 0 3px white inset; 
+}
+
+.hidden-field {
+    display: none;
+    flex-direction: column;
+    width: 100%;
+}
+.hidden-field.visible {
+    display: flex;
+}
+
+.btn-primary {
+    background-color: #528CFF;
+    color: white;
+    border: none;
+    padding: 14px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-family: 'Poppins', sans-serif; 
+    font-weight: 700; 
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.05s ease;
+    margin-top: 15px;
+}
+.btn-primary:hover {
+    background-color: #001E5E;
+}
+
+.btn-primary:disabled {
+    background-color: #a9c1f7;
+    cursor: not-allowed;
+}
+
+.separator {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    color: #aaa;
+    margin: 20px 0;
+    font-size: 13px;
+}
+.separator::before,
+.separator::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid #e0e0e0;
+}
+.separator:not(:empty)::before { margin-right: .5em; }
+.separator:not(:empty)::after { margin-left: .5em; }
+
+.btn-secondary {
+    background-color: #ffffff;
+    color: #001E5E;
+    border: 1px solid #001E5E;
+    padding: 14px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-family: 'Inter', sans-serif; 
+    font-weight: 500; 
+    cursor: pointer;
+    text-decoration: none;
+    text-align: center;
+    transition: background-color 0.2s, color 0.2s, transform 0.05s ease;
+}
+.btn-secondary:hover {
+    background-color: #001E5E;
+    color: #ffffff;
+}
+
+.btn-primary:active,
+.btn-secondary:active,
+.forgot-password:active {
+    transform: scale(0.98); 
+}
+
+@media (max-width: 768px) {
+    .public-page-wrapper {
+        align-items: flex-start;
+        padding: 20px 0;
+    }
+
+    .login-container {
+        flex-direction: column;
+        width: 90%; 
+        max-width: 450px; 
+        height: auto; 
+        min-height: 0; 
+        border-radius: 20px; 
+        margin-top: 20px;
+    }
+    .login-panel-left {
+        display: none; 
+    }
+    .tagline {
+        display: none;
+    }
+
+    .login-panel-right {
+        flex: 1;
+        padding: 40px 20px;
+        justify-content: center; 
+    }
+     .login-panel-right h2 { 
+        font-size: 28px; 
+        text-align: center; 
+    }
+    
+    .login-panel-right .logo-container { 
+        display: none; 
+    }
+
+    .role-selector {
+        flex-wrap: wrap;
+        gap: 15px;
+    }
+}
+
+/* CADASTRO */
+
+.signup-page .logo-container {
+    display: flex;
+    align-items: center;
+    margin-bottom: 80px;
+    margin-top: -250px;
+}
+
+.signup-page .logo-container h1 {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 35px;
+    font-weight: 700;
+    line-height: 85%; 
+    margin-top: 10px;
+}
+
+.signup-page .tagline {
+    font-family: 'Poppins', sans-serif;
+    font-size: 30px;
+    font-weight: 700; 
+    line-height: 115%; 
+}
+

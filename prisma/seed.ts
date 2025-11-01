@@ -6,7 +6,6 @@ const prisma = new PrismaClient();
 async function main() {
   const password = await bcrypt.hash("123456", 10);
 
-  // --- Psicólogo
   const psyUser = await prisma.user.upsert({
     where: { email: "dr.kay@example.com" },
     update: {},
@@ -21,10 +20,12 @@ async function main() {
   const psy = await prisma.psychologist.upsert({
     where: { userId: psyUser.id },
     update: {},
-    create: { userId: psyUser.id },
+    create: {
+      userId: psyUser.id,
+      crp: "06/12345",
+    },
   });
 
-  // --- Paciente 1
   const p1User = await prisma.user.upsert({
     where: { email: "alice@example.com" },
     update: {},
@@ -42,7 +43,6 @@ async function main() {
     create: { userId: p1User.id },
   });
 
-  // --- Paciente 2
   const p2User = await prisma.user.upsert({
     where: { email: "bob@example.com" },
     update: {},
@@ -60,7 +60,6 @@ async function main() {
     create: { userId: p2User.id },
   });
 
-  // --- Consultas de exemplo
   const now = new Date();
   const today10 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 10, 0);
   const tomorrow15 = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 15, 0);
