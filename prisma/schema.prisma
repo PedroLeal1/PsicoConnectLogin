@@ -37,7 +37,6 @@ model User {
   psychologist Psychologist?
   patient      Patient?
 
-  // 👉 adicione esta linha (back-relation):
   pendingActionsCreated PendingAction[] @relation("UserCreatedPendingActions")
 
   createdAt DateTime @default(now())
@@ -46,6 +45,7 @@ model User {
 
 model Psychologist {
   id           String        @id @default(uuid())
+  crp          String        @unique
   userId       String        @unique
   user         User          @relation(fields: [userId], references: [id])
   appointments Appointment[] @relation("PsychologistAppointments")
@@ -76,17 +76,15 @@ model Appointment {
 }
 
 model PendingAction {
-  id            String              @id @default(uuid())
-  type          PendingActionType
-  status        PendingActionStatus @default(PENDING)
-  token         String              @unique
-  appointmentId String
-  appointment   Appointment         @relation(fields: [appointmentId], references: [id])
-
+  id              String              @id @default(uuid())
+  type            PendingActionType
+  status          PendingActionStatus @default(PENDING)
+  token           String              @unique
+  appointmentId   String
+  appointment     Appointment         @relation(fields: [appointmentId], references: [id])
   createdByUserId String
-  // 👉 nomeie a relação para casar com o lado do User:
-  createdBy       User   @relation(name: "UserCreatedPendingActions", fields: [createdByUserId], references: [id])
-
-  expiresAt DateTime?
-  createdAt DateTime  @default(now())
+  createdBy      User                @relation(name: "UserCreatedPendingActions", fields: [createdByUserId], references: [id])
+  expiresAt       DateTime?
+  createdAt       DateTime            @default(now())
 }
+
