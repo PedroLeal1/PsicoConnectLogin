@@ -1,16 +1,29 @@
 "use client";
 
 import Link from 'next/link';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [apiError, setApiError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [apiError, setApiError] = useState('');
+
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const error = searchParams.get('error');
+    if (error) {
+      if (error === 'CredentialsSignin') {
+        setApiError('Email ou senha inválidos.');
+      } else {
+        setApiError(error);
+      }
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -19,26 +32,30 @@ export default function LoginPage() {
 
     try {
       const result = await signIn('credentials', {
-        email,
-        password,
         redirect: false,
+        email: email,
+        password: password,
       });
 
       if (result?.error) {
-        setApiError('Email ou senha inválidos.');
-        setIsLoading(false);
+        if (result.error === 'CredentialsSignin') {
+          setApiError('Email ou senha inválidos.');
+        } else {
+          setApiError(result.error);
+        }
       } else if (result?.ok) {
-        router.push('/dashboard'); 
+        router.push('/');
       }
     } catch (error) {
-      setApiError('Não foi possível conectar ao servidor. Tente novamente.');
+      setApiError('Não foi possível conectar ao servidor.');
+    } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <main className="public-page-wrapper">
-      <div className="login-container login-page">
+    <main className="public-page-wrapper login-page">
+      <div className="login-container">
         <div className="login-panel-left">
           <div className="logo-container">
             <img src="/logo.png" alt="Logo PsicoConnect" className="logo-img" />
@@ -51,14 +68,9 @@ export default function LoginPage() {
 
         <div className="login-panel-right">
           <h2>Entrar</h2>
-          <form id="login-form" onSubmit={handleSubmit} noValidate>
-            
-            {apiError && (
-              <small style={{ color: '#D93025', marginBottom: '10px', textAlign: 'center' }}>
-                {apiError}
-              </small>
-            )}
+          {apiError && <small style={{ color: '#D93025', marginBottom: '15px', textAlign: 'center' }}>{apiError}</small>}
 
+          <form id="login-form" onSubmit={handleSubmit} noValidate>
             <label htmlFor="email">Email</label>
             <input
               type="email"
@@ -66,6 +78,7 @@ export default function LoginPage() {
               name="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              className={apiError ? 'error' : ''}
               required
             />
             <small id="email-error" className="error-message"></small>
@@ -77,6 +90,7 @@ export default function LoginPage() {
               name="senha"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              className={apiError ? 'error' : ''}
               required
             />
             <small id="senha-error" className="error-message"></small>
@@ -86,7 +100,7 @@ export default function LoginPage() {
             </Link>
 
             <button type="submit" className="btn-primary" disabled={isLoading}>
-              {isLoading ? 'Entrando...' : 'Entrar'}
+              {isLoading ? 'Aguarde...' : 'Entrar'}
             </button>
           </form>
 
@@ -100,4 +114,3 @@ export default function LoginPage() {
     </main>
   );
 }
-

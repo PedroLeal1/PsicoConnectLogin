@@ -12,123 +12,102 @@ export default function SignupPage() {
   const [role, setRole] = useState('paciente');
   const [crp, setCrp] = useState('');
 
+  const [isLoading, setIsLoading] = useState(false);
+  const [apiError, setApiError] = useState('');
+  
   const [nomeError, setNomeError] = useState('');
   const [emailError, setEmailError] = useState('');
   const [senhaError, setSenhaError] = useState('');
   const [confirmarSenhaError, setConfirmarSenhaError] = useState('');
   const [crpError, setCrpError] = useState('');
-  
-  const [apiError, setApiError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
 
   const router = useRouter();
 
-  function isValidEmail(email: string) {
-    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return regex.test(email);
-  }
-
-  function isValidCRP(crp: string) {
+  function isValidCRP(crp: string): boolean {
     const regex = /^\d{2}\/\d{4,8}$/;
     return regex.test(crp);
   }
 
   const handleCrpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value;
+    let value = e.target.value.replace(/\D/g, '');
     
-    let digits = value.replace(/\D/g, '');
-    
-    digits = digits.slice(0, 10);
-    
-    if (digits.length > 2) {
-      digits = digits.slice(0, 2) + '/' + digits.slice(2);
+    if (value.length > 10) {
+      value = value.substring(0, 10);
     }
-
-    setCrp(digits);
+    
+    if (value.length > 2) {
+      value = value.substring(0, 2) + '/' + value.substring(2);
+    }
+    setCrp(value);
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    
+    setIsLoading(true);
     setApiError('');
     setNomeError('');
     setEmailError('');
     setSenhaError('');
     setConfirmarSenhaError('');
     setCrpError('');
-    setIsLoading(true);
 
     let isValid = true;
-
     if (nome.trim() === '') {
       setNomeError('Por favor, preencha seu nome.');
       isValid = false;
     }
-
     if (email.trim() === '') {
       setEmailError('Por favor, preencha o campo de email.');
       isValid = false;
-    } else if (!isValidEmail(email)) {
-      setEmailError('Por favor, insira um email válido (ex: email@dominio.com).');
-      isValid = false;
     }
-
-    if (senha.trim() === '') {
-      setSenhaError('Por favor, preencha o campo de senha.');
-      isValid = false;
-    } else if (senha.length < 8) {
+    if (senha.length < 8) {
       setSenhaError('A senha deve ter no mínimo 8 caracteres.');
       isValid = false;
     }
-
-    if (confirmarSenha.trim() === '') {
-      setConfirmarSenhaError('Por favor, confirme sua senha.');
-      isValid = false;
-    } else if (senha !== confirmarSenha) {
+    if (senha !== confirmarSenha) {
       setConfirmarSenhaError('As senhas não coincidem.');
       isValid = false;
     }
-
     if (role === 'psicologo') {
-      if (crp.trim() === '') {
-        setCrpError('Por favor, preencha seu CRP.');
-        isValid = false;
-      } else if (!isValidCRP(crp)) {
-        setCrpError('Formato de CRP inválido. Use (ex: 06/12345).');
+      if (!isValidCRP(crp)) {
+        setCrpError('Formato de CRP inválido (ex: 06/123456).');
         isValid = false;
       }
     }
-
     if (!isValid) {
       setIsLoading(false);
+      setApiError('Dados inválidos. Verifique os campos.');
       return;
     }
 
     try {
-      const res = await fetch('/api/signup', {
+      const response = await fetch('/api/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nome, email, senha, confirmarSenha, role, crp }),
+        body: JSON.stringify({
+          name: nome,
+          email: email,
+          password: senha,
+          confirmPassword: confirmarSenha,
+          role: role.toUpperCase(),
+          crp: crp,
+        }),
       });
 
-      const data = await res.json();
+      const data = await response.json();
 
-      if (!res.ok) {
-        if (res.status === 409) {
-          setApiError(data.error);
-        } else if (res.status === 400) {
-          setApiError('Dados inválidos. Verifique os campos.');
-          if (data.details?.email) setEmailError(data.details.email[0]);
-          if (data.details?.nome) setNomeError(data.details.nome[0]);
-          if (data.details?.password) setSenhaError(data.details.password[0]);
-          if (data.details?.confirmPassword) setConfirmarSenhaError(data.details.confirmPassword[0]);
-          if (data.details?.crp) setCrpError(data.details.crp[0]);
-        } else {
-          setApiError('Erro ao criar conta. Tente novamente.');
+      if (!response.ok) {
+        setApiError(data.error || 'Dados inválidos. Verifique os campos.');
+        if (data.details) {
+          data.details.name?.forEach((err: string) => setNomeError(err));
+          data.details.email?.forEach((err: string) => setEmailError(err));
+          data.details.password?.forEach((err: string) => setSenhaError(err));
+          data.details.confirmPassword?.forEach((err: string) => setConfirmarSenhaError(err));
+          data.details.role?.forEach((err: string) => setApiError(err));
+          data.details.crp?.forEach((err: string) => setCrpError(err));
         }
       } else {
-        alert('Cadastro realizado com sucesso! Redirecionando para o login...');
-        router.push('/login');
+        setApiError(data.message || 'Registro concluído! Verifique o seu email.');
       }
     } catch (error) {
       setApiError('Não foi possível conectar ao servidor. Tente novamente.');
@@ -137,9 +116,11 @@ export default function SignupPage() {
     }
   };
 
+  const isSuccessMessage = apiError.startsWith('Registro') || apiError.startsWith('Email');
+
   return (
-    <main className="public-page-wrapper">
-      <div className="login-container signup-page">
+    <main className="public-page-wrapper signup-page">
+      <div className="login-container">
         <div className="login-panel-left">
           <div className="logo-container">
             <img src="/logo.png" alt="Logo PsicoConnect" className="logo-img" />
@@ -152,14 +133,10 @@ export default function SignupPage() {
 
         <div className="login-panel-right">
           <h2>Criar Conta</h2>
+          {apiError && <small style={{ color: isSuccessMessage ? 'green' : '#D93025', marginBottom: '15px', textAlign: 'center' }}>{apiError}</small>}
+          
           <form id="cadastro-form" onSubmit={handleSubmit} noValidate>
             
-            {apiError && (
-              <small style={{ color: '#D93025', marginBottom: '10px', textAlign: 'center' }}>
-                {apiError}
-              </small>
-            )}
-
             <label htmlFor="nome">Nome</label>
             <input
               type="text"
@@ -232,7 +209,7 @@ export default function SignupPage() {
             </div>
 
             <div id="crp-field" className={role === 'psicologo' ? 'hidden-field visible' : 'hidden-field'}>
-              <label htmlFor="crp">CRP (Conselho Regional de Psicologia)</label>
+              <label htmlFor="crp">CRP (ex: 06/123456)</label>
               <input
                 type="text"
                 id="crp"
@@ -240,14 +217,13 @@ export default function SignupPage() {
                 value={crp}
                 onChange={handleCrpChange}
                 className={crpError ? 'error' : ''}
-                placeholder="00/00000"
                 maxLength={11}
               />
               <small id="crp-error" className="error-message">{crpError}</small>
             </div>
 
             <button type="submit" className="btn-primary" disabled={isLoading}>
-              {isLoading ? 'Cadastrando...' : 'Cadastrar'}
+              {isLoading ? 'Aguarde...' : 'Cadastrar'}
             </button>
           </form>
 
@@ -261,4 +237,3 @@ export default function SignupPage() {
     </main>
   );
 }
-
