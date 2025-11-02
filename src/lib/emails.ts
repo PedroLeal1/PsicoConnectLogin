@@ -34,7 +34,7 @@ export async function sendVerificationEmail(email: string, token: string) {
   try {
     
     await resend.emails.send({
-      from: 'PsicoConnect <onboarding@resend.dev>',
+      from: 'PsicoConnect <nao-responda@psicoconnect.site>',
       to: email, 
       subject: 'Confirme o seu email - PsicoConnect',
       react: EmailTemplate({ confirmLink }),
