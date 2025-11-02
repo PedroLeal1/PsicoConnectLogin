@@ -1,7 +1,10 @@
+// Ficheiro: src/app/api/signup/route.ts
+
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import bcrypt from "bcrypt";
+import { generateVerificationToken, sendVerificationEmail } from "../../../lib/emails"; 
 
 const prisma = new PrismaClient();
 
@@ -11,7 +14,7 @@ const schema = z
     email: z.string().email("Email inválido"),
     password: z.string().min(8, "Senha deve ter pelo menos 8 caracteres"),
     confirmPassword: z.string().min(8),
-    role: z.enum(["PSYCHOLOGIST", "PATIENT"]),
+    role: z.enum(["PSICOLOGO", "PACIENTE"]),
     crp: z.string().optional(),
   })
   .refine((data) => data.password === data.confirmPassword, {
@@ -19,7 +22,7 @@ const schema = z
     message: "As senhas não coincidem",
   })
   .refine((data) => {
-    if (data.role === "PSYCHOLOGIST" && (!data.crp || data.crp.trim() === "")) {
+    if (data.role === "PSICOLOGO" && (!data.crp || data.crp.trim() === "")) {
       return false;
     }
     return true;
@@ -35,17 +38,24 @@ export async function POST(req: Request) {
 
     const exists = await prisma.user.findUnique({ where: { email: data.email } });
     if (exists) {
+      if (!exists.emailVerified) {
+        const verificationToken = await generateVerificationToken(exists.email);
+        await sendVerificationEmail(verificationToken.email, verificationToken.token);
+        return NextResponse.json({ message: "Email já registrado. Email de verificação reenviado." }, { status: 200 });
+      }
       return NextResponse.json({ error: "Este email já está em uso." }, { status: 409 });
     }
 
     const passwordHash = await bcrypt.hash(data.password, 10);
+    
+    const roleInEnglish = data.role === 'PACIENTE' ? 'PATIENT' : 'PSYCHOLOGIST';
 
     const user = await prisma.user.create({
       data: {
         name: data.name,
         email: data.email,
         passwordHash,
-        role: data.role,
+        role: roleInEnglish,
       },
     });
 
@@ -60,7 +70,10 @@ export async function POST(req: Request) {
       await prisma.patient.create({ data: { userId: user.id } });
     }
 
-    return NextResponse.json({ ok: true, userId: user.id });
+    const verificationToken = await generateVerificationToken(user.email);
+    await sendVerificationEmail(verificationToken.email, verificationToken.token);
+
+    return NextResponse.json({ ok: true, message: "Registro concluído! Verifique o seu email." });
   
   } catch (e) {
     if (e instanceof z.ZodError) {
@@ -74,4 +87,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Erro interno do servidor" }, { status: 500 });
   }
 }
-
