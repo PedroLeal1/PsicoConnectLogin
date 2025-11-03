@@ -1,13 +1,10 @@
 // Ficheiro: src/lib/auth.ts
 
-
-import type { NextAuthOptions } from "next-auth"; 
+import type { NextAuthOptions } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
 import bcrypt from "bcrypt";
-import { PrismaClient } from "@prisma/client";
-const prisma = new PrismaClient();
-
+import prisma from "./prisma"; 
 
 export const authConfig: NextAuthOptions = {
   session: { strategy: "jwt" },
@@ -41,37 +38,17 @@ export const authConfig: NextAuthOptions = {
         if (!ok) {
           throw new Error("Email ou senha inválidos.");
         }
-
+        
         if (!user.emailVerified) {
           throw new Error("Por favor, verifique o seu email antes de fazer login.");
         }
 
-       
-        return { 
-          id: user.id, 
-          name: user.name, 
-          email: user.email,
-        
-          role: user.role 
-        };
+        return { id: user.id, name: user.name, email: user.email, role: user.role };
       },
     }),
   ],
   callbacks: {
-  
-    async jwt({ token, user }) { 
-      if (user) { 
-        token.id = (user as any).id; 
-        token.role = (user as any).role; 
-      } 
-      return token; 
-    },
-    async session({ session, token }) { 
-      if (session.user) { 
-        (session.user as any).id = token.id; 
-        (session.user as any).role = token.role; 
-      } 
-      return session; 
-    },
+    async jwt({ token, user }) { if (user) { token.id = (user as any).id; token.role = (user as any).role; } return token; },
+    async session({ session, token }) { if (session.user) { (session.user as any).id = token.id; (session.user as any).role = token.role; } return session; },
   },
 };

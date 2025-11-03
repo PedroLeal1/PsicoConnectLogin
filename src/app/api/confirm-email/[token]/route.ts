@@ -1,15 +1,13 @@
 // Ficheiro: src/app/api/confirm-email/[token]/route.ts
 
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import prisma from "../../../../lib/prisma";
 
-const prisma = new PrismaClient();
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
 export async function GET(
   request: Request
 ) {
-
   const urlParts = request.url.split('/');
   const token = urlParts[urlParts.length - 1];
 
