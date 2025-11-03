@@ -1,7 +1,5 @@
-// Ficheiro: src/app/api/confirm-email/[token]/route.ts
-
 import { NextResponse } from "next/server";
-import prisma from "../../../../lib/prisma";
+import prisma from "../../../../lib/prisma"; 
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
@@ -26,7 +24,7 @@ export async function GET(
   const hasExpired = new Date(verificationToken.expiresAt) < new Date();
   if (hasExpired) {
     await prisma.verificationToken.delete({ where: { token } });
-    return NextResponse.json({ error: "Token expirado. Por favor, tente registar-se novamente." }, { status: 410 });
+    return NextResponse.json({ error: "Token expirado. Por favor, tente registrar-se novamente." }, { status: 410 });
   }
 
   const user = await prisma.user.findUnique({
