@@ -1,5 +1,3 @@
-// Ficheiro: src/app/api/signup/route.ts
-
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcrypt";
@@ -39,7 +37,7 @@ export async function POST(req: Request) {
       if (!exists.emailVerified) {
         const verificationToken = await generateVerificationToken(exists.email);
         await sendVerificationEmail(verificationToken.email, verificationToken.token);
-        return NextResponse.json({ message: "Email já registado. Email de verificação reenviado." }, { status: 200 });
+        return NextResponse.json({ message: "Email já registrado. Email de verificação reenviado." }, { status: 200 });
       }
       return NextResponse.json({ error: "Este email já está em uso." }, { status: 409 });
     }
@@ -71,7 +69,7 @@ export async function POST(req: Request) {
     const verificationToken = await generateVerificationToken(user.email);
     await sendVerificationEmail(verificationToken.email, verificationToken.token);
 
-    return NextResponse.json({ ok: true, message: "Registo concluído! Verifique o seu email." });
+    return NextResponse.json({ ok: true, message: "Registro concluído! Verifique o seu email." });
   
   } catch (e) {
     if (e instanceof z.ZodError) {

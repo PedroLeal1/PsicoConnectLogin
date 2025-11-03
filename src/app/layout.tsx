@@ -2,84 +2,101 @@
 
 import { SessionProvider, useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
-import { redirect, usePathname } from 'next/navigation';
-import { PropsWithChildren, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { PropsWithChildren, useState, useEffect } from 'react';
 import './globals.css';
 
 function AuthGuard({ children }: PropsWithChildren) {
   const { status } = useSession();
   const [isSidebarVisible, setIsSidebarVisible] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
 
   const isPublicPage = pathname.startsWith('/login') || pathname.startsWith('/signup');
+
+  useEffect(() => {
+    if (status === 'loading') return;
+
+    if (status === 'unauthenticated' && !isPublicPage) {
+      router.push('/login');
+    }
+
+    if (status === 'authenticated' && isPublicPage) {
+      router.push('/');
+    }
+  }, [status, pathname, isPublicPage, router]);
 
   if (status === 'loading') {
     return (
       <body className="flex items-center justify-center h-screen bg-gray-50">
-        <div className="text-lg font-semibold text-blue-800">A carregar sessão...</div>
+        <div className="text-lg font-semibold text-blue-800">Carregando...</div>
       </body>
     );
   }
 
-  if (status === 'unauthenticated' && !isPublicPage) {
-    redirect('/login');
-  }
-
-  if (status === 'authenticated' && isPublicPage) {
-    redirect('/');
-  }
-
-  if (isPublicPage) {
+  if (isPublicPage && status === 'unauthenticated') {
     return <body>{children}</body>;
   }
 
-  const isActive = (path: string) => pathname === path;
+  if (!isPublicPage && status === 'authenticated') {
+    const isActive = (path: string) => pathname === path;
+
+    return (
+      <body>
+        {isSidebarVisible && (
+          <div className="overlay" onClick={() => setIsSidebarVisible(false)}></div>
+        )}
+
+        <div className="chat-container">
+            <nav className={`sidebar ${isSidebarVisible ? 'sidebar-visible' : ''}`}>
+                <div className="sidebar-header">
+                    <div className="logo">
+                        <img src="/logo.png" alt="Logo PsicoConnect" />
+                    </div>
+                    <h1>Psico<br />Connect</h1>
+                </div>
+                
+                <div className="sidebar-nav">
+                    <Link href="/" className={isActive('/') ? 'active' : ''}>
+                        <i className="fa-solid fa-home"></i> Início
+                    </Link>
+                    <Link href="#" className={isActive('/consultas') ? 'active' : ''}>
+                        <i className="fa-solid fa-calendar-alt"></i> Minhas Consultas
+                    </Link>
+                    <Link href="#" className={isActive('/conteudos') ? 'active' : ''}>
+                        <i className="fa-solid fa-book-open"></i> Conteúdos
+                    </Link>
+                    <Link href="/chat" className={isActive('/chat') ? 'active' : ''}>
+                        <i className="fa-solid fa-comments"></i> Chat
+                    </Link>
+                </div>
+                <div className="sidebar-footer">
+                    <button 
+                        onClick={() => signOut({ callbackUrl: '/login' })}
+                    >
+                        <i className="fa-solid fa-sign-out-alt"></i> Sair
+                    </button>
+                </div>
+            </nav>
+
+            <main className="chat-main-wrapper">
+                <button 
+                    className="menu-toggle-button"
+                    onClick={() => setIsSidebarVisible(true)}
+                >
+                    <i className="fa-solid fa-bars"></i>
+                </button>
+                
+                {children}
+            </main>
+        </div>
+      </body>
+    );
+  }
 
   return (
-    <body>
-      <div className="overlay" onClick={() => setIsSidebarVisible(false)}></div> 
-      <div className="chat-container">
-          <nav className={`sidebar ${isSidebarVisible ? 'sidebar-visible' : ''}`}>
-              <div className="sidebar-header">
-                  <div className="logo">
-                      <img src="/logo.png" alt="Logo PsicoConnect" />
-                  </div>
-                  <h1>Psico<br />Connect</h1>
-              </div>
-              
-              <div className="sidebar-nav">
-                  <Link href="/" className={isActive('/') ? 'active' : ''}>
-                      <i className="fa-solid fa-home"></i> Início
-                  </Link>
-                  <Link href="#" className={isActive('/consultas') ? 'active' : ''}>
-                      <i className="fa-solid fa-calendar-alt"></i> Minhas Consultas
-                  </Link>
-                  <Link href="#" className={isActive('/conteudos') ? 'active' : ''}>
-                      <i className="fa-solid fa-book-open"></i> Conteúdos
-                  </Link>
-                  <Link href="/chat" className={isActive('/chat') ? 'active' : ''}>
-                      <i className="fa-solid fa-comments"></i> Chat
-                  </Link>
-              </div>
-              <div className="sidebar-footer">
-                  <button 
-                      onClick={() => signOut({ callbackUrl: '/login' })}
-                  >
-                      <i className="fa-solid fa-sign-out-alt"></i> Sair
-                  </button>
-              </div>
-          </nav>
-
-          <main className="chat-main">
-              <button 
-                  className="menu-toggle-button"
-                  onClick={() => setIsSidebarVisible(true)}
-              >
-                  <i className="fa-solid fa-bars"></i>
-              </button>
-              {children}
-          </main>
-      </div>
+    <body className="flex items-center justify-center h-screen bg-gray-50">
+      <div className="text-lg font-semibold text-blue-800">A carregar...</div>
     </body>
   );
 }

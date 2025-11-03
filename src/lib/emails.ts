@@ -1,5 +1,3 @@
-// Ficheiro: src/lib/emails.ts
-
 import { Resend } from 'resend';
 import { EmailTemplate } from '../components/EmailTemplate';
 import prisma from "./prisma"; 

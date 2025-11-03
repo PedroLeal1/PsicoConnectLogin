@@ -18,7 +18,7 @@ export default function DashboardPage() {
           Bem-vindo, {user?.name || 'Utilizador'}!
         </h1>
         <p className="text-lg text-indigo-600 mb-8">
-          Este é o seu Painel de Controlo PsicoConnect.
+          Este é o seu Painel de Controle PsicoConnect.
         </p>
 
         <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-8 rounded-lg">
