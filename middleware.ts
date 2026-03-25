@@ -11,31 +11,41 @@ export async function middleware(req: NextRequest) {
   // Permitir rotas públicas
   if (
     PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
-    pathname.startsWith("/_next") || // assets do Next
+    pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
     pathname === "/"
   ) {
     // Se estiver logado e entrar em "/" → manda para o dashboard certo
     if (pathname === "/") {
-      const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+      const token = await getToken({
+        req,
+        secret: process.env.NEXTAUTH_SECRET,
+      });
+
       if (token?.role === "PSYCHOLOGIST") {
         return NextResponse.redirect(new URL("/dashboard", req.url));
       }
+
       if (token?.role === "PATIENT") {
         return NextResponse.redirect(new URL("/patient", req.url));
       }
     }
+
     return NextResponse.next();
   }
 
   // Checar se está logado
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+
   if (!token) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
   // Controle de acesso por papel
-  if (pathname.startsWith("/dashboard") && token.role !== "PSYCHOLOGIST") {
+  if (
+    (pathname.startsWith("/dashboard") || pathname.startsWith("/agenda")) &&
+    token.role !== "PSYCHOLOGIST"
+  ) {
     return NextResponse.redirect(new URL("/patient", req.url));
   }
 
@@ -48,7 +58,5 @@ export async function middleware(req: NextRequest) {
 
 // Definir onde o middleware roda
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico).*)", // todas rotas menos assets
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
