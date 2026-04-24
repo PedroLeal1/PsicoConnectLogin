@@ -1,128 +1,6 @@
-"use client";
-
-import { SessionProvider, useSession, signOut } from "next-auth/react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { PropsWithChildren, useState, useEffect } from "react";
+import type { PropsWithChildren } from "react";
 import "./globals.css";
-
-function AuthGuard({ children }: PropsWithChildren) {
-  const { data: session, status } = useSession();
-  const [isSidebarVisible, setIsSidebarVisible] = useState(false);
-  const pathname = usePathname();
-  const router = useRouter();
-
-  const isPublicPage =
-    pathname.startsWith("/login") || pathname.startsWith("/signup");
-
-  const isPsychologist = session?.user?.role === "PSYCHOLOGIST";
-
-  useEffect(() => {
-    if (status === "loading") return;
-
-    if (status === "unauthenticated" && !isPublicPage) {
-      router.push("/login");
-    }
-
-    if (status === "authenticated" && isPublicPage) {
-      router.push("/");
-    }
-  }, [status, pathname, isPublicPage, router]);
-
-  if (status === "loading") {
-    return (
-      <body className="flex items-center justify-center h-screen bg-gray-50">
-        <div className="text-lg font-semibold text-blue-800">Carregando...</div>
-      </body>
-    );
-  }
-
-  if (isPublicPage && status === "unauthenticated") {
-    return <body>{children}</body>;
-  }
-
-  if (!isPublicPage && status === "authenticated") {
-    const isActive = (path: string) => pathname === path;
-
-    return (
-      <body>
-        {isSidebarVisible && (
-          <div
-            className="overlay"
-            onClick={() => setIsSidebarVisible(false)}
-          ></div>
-        )}
-
-        <div className="chat-container">
-          <nav
-            className={`sidebar ${isSidebarVisible ? "sidebar-visible" : ""}`}
-          >
-            <div className="sidebar-header">
-              <div className="logo">
-                <img src="/logo.png" alt="Logo PsicoConnect" />
-              </div>
-              <h1>
-                Psico
-                <br />
-                Connect
-              </h1>
-            </div>
-
-            <div className="sidebar-nav">
-              <Link href="/" className={isActive("/") ? "active" : ""}>
-                <i className="fa-solid fa-home"></i> Início
-              </Link>
-
-              {isPsychologist && (
-                <Link
-                  href="/agenda"
-                  className={isActive("/agenda") ? "active" : ""}
-                >
-                  <i className="fa-solid fa-calendar-days"></i> Agenda
-                </Link>
-              )}
-
-              <Link href="#" className={isActive("/consultas") ? "active" : ""}>
-                <i className="fa-solid fa-calendar-alt"></i> Minhas Consultas
-              </Link>
-
-              <Link href="#" className={isActive("/conteudos") ? "active" : ""}>
-                <i className="fa-solid fa-book-open"></i> Conteúdos
-              </Link>
-
-              <Link href="/chat" className={isActive("/chat") ? "active" : ""}>
-                <i className="fa-solid fa-comments"></i> Chat
-              </Link>
-            </div>
-
-            <div className="sidebar-footer">
-              <button onClick={() => signOut({ callbackUrl: "/login" })}>
-                <i className="fa-solid fa-sign-out-alt"></i> Sair
-              </button>
-            </div>
-          </nav>
-
-          <main className="chat-main-wrapper">
-            <button
-              className="menu-toggle-button"
-              onClick={() => setIsSidebarVisible(true)}
-            >
-              <i className="fa-solid fa-bars"></i>
-            </button>
-
-            {children}
-          </main>
-        </div>
-      </body>
-    );
-  }
-
-  return (
-    <body className="flex items-center justify-center h-screen bg-gray-50">
-      <div className="text-lg font-semibold text-blue-800">A carregar...</div>
-    </body>
-  );
-}
+import AppProviders from "@/components/AppProviders";
 
 export default function RootLayout({ children }: PropsWithChildren) {
   return (
@@ -143,9 +21,9 @@ export default function RootLayout({ children }: PropsWithChildren) {
           rel="stylesheet"
         />
       </head>
-      <SessionProvider>
-        <AuthGuard>{children}</AuthGuard>
-      </SessionProvider>
+      <body>
+        <AppProviders>{children}</AppProviders>
+      </body>
     </html>
   );
 }

@@ -20,7 +20,7 @@ export default function LoginPage() {
       if (error === 'CredentialsSignin') {
         setApiError('Email ou senha inválidos.');
       } else {
-        setApiError(error);
+        setApiError('Não foi possível concluir o login. Tente novamente.');
       }
     }
   }, [searchParams]);
@@ -41,13 +41,14 @@ export default function LoginPage() {
         if (result.error === 'CredentialsSignin') {
           setApiError('Email ou senha inválidos.');
         } else {
-          setApiError(result.error);
+          setApiError('Não foi possível conectar ao servidor no momento. Tente novamente.');
         }
       } else if (result?.ok) {
-        router.push('/');
+        router.push('/dashboard');
       }
     } catch (error) {
-      setApiError('Não foi possível conectar ao servidor.');
+      console.error(error);
+      setApiError('Não foi possível conectar ao servidor no momento. Tente novamente.');
     } finally {
       setIsLoading(false);
     }
@@ -67,8 +68,20 @@ export default function LoginPage() {
         </div>
 
         <div className="login-panel-right">
+          <div className="public-top-actions">
+            <Link href="/" className="back-home-btn">
+              <i className="fa-solid fa-arrow-left"></i>
+              Voltar para a home
+            </Link>
+          </div>
+
           <h2>Entrar</h2>
-          {apiError && <small style={{ color: '#D93025', marginBottom: '15px', textAlign: 'center' }}>{apiError}</small>}
+
+          {apiError && (
+            <small style={{ color: '#D93025', marginBottom: '15px', textAlign: 'center' }}>
+              {apiError}
+            </small>
+          )}
 
           <form id="login-form" onSubmit={handleSubmit} noValidate>
             <label htmlFor="email">Email</label>

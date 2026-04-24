@@ -1,8 +1,8 @@
 "use client";
 
 import Link from 'next/link';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 export default function SignupPage() {
   const [nome, setNome] = useState('');
@@ -14,14 +14,26 @@ export default function SignupPage() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState('');
-  
+
   const [nomeError, setNomeError] = useState('');
   const [emailError, setEmailError] = useState('');
   const [senhaError, setSenhaError] = useState('');
   const [confirmarSenhaError, setConfirmarSenhaError] = useState('');
   const [crpError, setCrpError] = useState('');
 
-  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const roleParam = searchParams.get('role');
+
+    if (roleParam === 'PATIENT') {
+      setRole('paciente');
+    }
+
+    if (roleParam === 'PSYCHOLOGIST') {
+      setRole('psicologo');
+    }
+  }, [searchParams]);
 
   function isValidCRP(crp: string): boolean {
     const regex = /^\d{2}\/\d{4,8}$/;
@@ -30,14 +42,15 @@ export default function SignupPage() {
 
   const handleCrpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value.replace(/\D/g, '');
-    
+
     if (value.length > 10) {
       value = value.substring(0, 10);
     }
-    
+
     if (value.length > 2) {
       value = value.substring(0, 2) + '/' + value.substring(2);
     }
+
     setCrp(value);
   };
 
@@ -52,28 +65,32 @@ export default function SignupPage() {
     setCrpError('');
 
     let isValid = true;
+
     if (nome.trim() === '') {
       setNomeError('Por favor, preencha seu nome.');
       isValid = false;
     }
+
     if (email.trim() === '') {
       setEmailError('Por favor, preencha o campo de email.');
       isValid = false;
     }
+
     if (senha.length < 8) {
       setSenhaError('A senha deve ter no mínimo 8 caracteres.');
       isValid = false;
     }
+
     if (senha !== confirmarSenha) {
       setConfirmarSenhaError('As senhas não coincidem.');
       isValid = false;
     }
-    if (role === 'psicologo') {
-      if (!isValidCRP(crp)) {
-        setCrpError('Formato de CRP inválido (ex: 06/123456).');
-        isValid = false;
-      }
+
+    if (role === 'psicologo' && !isValidCRP(crp)) {
+      setCrpError('Formato de CRP inválido (ex: 06/123456).');
+      isValid = false;
     }
+
     if (!isValid) {
       setIsLoading(false);
       setApiError('Dados inválidos. Verifique os campos.');
@@ -98,25 +115,29 @@ export default function SignupPage() {
 
       if (!response.ok) {
         setApiError(data.error || 'Dados inválidos. Verifique os campos.');
+
         if (data.details) {
           data.details.name?.forEach((err: string) => setNomeError(err));
           data.details.email?.forEach((err: string) => setEmailError(err));
           data.details.password?.forEach((err: string) => setSenhaError(err));
-          data.details.confirmPassword?.forEach((err: string) => setConfirmarSenhaError(err));
+          data.details.confirmPassword?.forEach((err: string) =>
+            setConfirmarSenhaError(err)
+          );
           data.details.role?.forEach((err: string) => setApiError(err));
           data.details.crp?.forEach((err: string) => setCrpError(err));
         }
       } else {
         setApiError(data.message || 'Registro concluído! Verifique o seu email.');
       }
-    } catch (error) {
+    } catch {
       setApiError('Não foi possível conectar ao servidor. Tente novamente.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const isSuccessMessage = apiError.startsWith('Registro') || apiError.startsWith('Email');
+  const isSuccessMessage =
+    apiError.startsWith('Registro') || apiError.startsWith('Email');
 
   return (
     <main className="public-page-wrapper signup-page">
@@ -124,19 +145,43 @@ export default function SignupPage() {
         <div className="login-panel-left">
           <div className="logo-container">
             <img src="/logo.png" alt="Logo PsicoConnect" className="logo-img" />
-            <h1>Psico<br />Connect</h1>
+            <h1>
+              Psico
+              <br />
+              Connect
+            </h1>
           </div>
           <p className="tagline">
-            Um espaço<br />seguro para sua<br />saúde mental.
+            Um espaço
+            <br />
+            seguro para sua
+            <br />
+            saúde mental.
           </p>
         </div>
 
         <div className="login-panel-right">
+          <div className="public-top-actions">
+            <Link href="/" className="back-home-btn">
+              <i className="fa-solid fa-arrow-left"></i>
+              Voltar para a home
+            </Link>
+          </div>
+
           <h2>Criar Conta</h2>
-          {apiError && <small style={{ color: isSuccessMessage ? 'green' : '#D93025', marginBottom: '15px', textAlign: 'center' }}>{apiError}</small>}
-          
+          {apiError && (
+            <small
+              style={{
+                color: isSuccessMessage ? 'green' : '#D93025',
+                marginBottom: '15px',
+                textAlign: 'center',
+              }}
+            >
+              {apiError}
+            </small>
+          )}
+
           <form id="cadastro-form" onSubmit={handleSubmit} noValidate>
-            
             <label htmlFor="nome">Nome</label>
             <input
               type="text"
@@ -183,7 +228,9 @@ export default function SignupPage() {
               className={confirmarSenhaError ? 'error' : ''}
               required
             />
-            <small id="confirmar-senha-error" className="error-message">{confirmarSenhaError}</small>
+            <small id="confirmar-senha-error" className="error-message">
+              {confirmarSenhaError}
+            </small>
 
             <label>Você é:</label>
             <div className="role-selector">
@@ -195,8 +242,10 @@ export default function SignupPage() {
                 checked={role === 'paciente'}
                 onChange={(e) => setRole(e.target.value)}
               />
-              <label htmlFor="role-paciente" className="radio-label">Paciente</label>
-              
+              <label htmlFor="role-paciente" className="radio-label">
+                Paciente
+              </label>
+
               <input
                 type="radio"
                 id="role-psicologo"
@@ -205,10 +254,15 @@ export default function SignupPage() {
                 checked={role === 'psicologo'}
                 onChange={(e) => setRole(e.target.value)}
               />
-              <label htmlFor="role-psicologo" className="radio-label">Psicólogo</label>
+              <label htmlFor="role-psicologo" className="radio-label">
+                Psicólogo
+              </label>
             </div>
 
-            <div id="crp-field" className={role === 'psicologo' ? 'hidden-field visible' : 'hidden-field'}>
+            <div
+              id="crp-field"
+              className={role === 'psicologo' ? 'hidden-field visible' : 'hidden-field'}
+            >
               <label htmlFor="crp">CRP (ex: 06/123456)</label>
               <input
                 type="text"
