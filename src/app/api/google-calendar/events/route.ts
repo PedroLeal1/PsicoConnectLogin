@@ -29,105 +29,104 @@ async function refreshGoogleAccessToken(refreshToken: string) {
   return data.access_token as string;
 }
 
-async function createGoogleEvent(accessToken: string, payload: any) {
-  const response = await fetch(
+async function fetchGoogleEvents(accessToken: string) {
+  const now = new Date().toISOString();
+
+  const url = new URL(
     "https://www.googleapis.com/calendar/v3/calendars/primary/events",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    },
   );
 
-  const data = await response.json();
+  url.searchParams.set("timeMin", now);
+  url.searchParams.set("maxResults", "10");
+  url.searchParams.set("singleEvents", "true");
+  url.searchParams.set("orderBy", "startTime");
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    cache: "no-store",
+  });
+
+  const text = await response.text();
+
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { raw: text };
+  }
 
   return { response, data };
 }
 
-export async function POST(req: NextRequest) {
-  const token = await getToken({
-    req,
-    secret: process.env.NEXTAUTH_SECRET,
-  });
-
-  const googleAccessToken = (token as any)?.googleAccessToken;
-  const googleRefreshToken = (token as any)?.googleRefreshToken;
-
-  if (!token || !googleAccessToken) {
-    return NextResponse.json(
-      { error: "Google Calendar não conectado." },
-      { status: 401 },
-    );
-  }
-
+export async function GET(req: NextRequest) {
   try {
-    const body = await req.json();
+    const token = await getToken({
+      req,
+      secret: process.env.NEXTAUTH_SECRET,
+    });
 
-    const { title, date, startTime, endTime, location, description } = body;
+    const googleAccessToken = (token as any)?.googleAccessToken;
+    const googleRefreshToken = (token as any)?.googleRefreshToken;
 
-    if (!title || !date || !startTime || !endTime) {
+    if (!token || !googleAccessToken) {
       return NextResponse.json(
-        { error: "Título, data, hora inicial e hora final são obrigatórios." },
-        { status: 400 },
+        { error: "Google Calendar não conectado.", events: [] },
+        { status: 401 },
       );
     }
-
-    const startDateTime = `${date}T${startTime}:00`;
-    const endDateTime = `${date}T${endTime}:00`;
-
-    const payload = {
-      summary: title,
-      description: description || "",
-      location: location || "",
-      start: {
-        dateTime: startDateTime,
-        timeZone: "America/Fortaleza",
-      },
-      end: {
-        dateTime: endDateTime,
-        timeZone: "America/Fortaleza",
-      },
-    };
 
     let accessTokenToUse = googleAccessToken;
 
-    let { response, data } = await createGoogleEvent(accessTokenToUse, payload);
+    let { response, data } = await fetchGoogleEvents(accessTokenToUse);
 
     if (response.status === 401 && googleRefreshToken) {
       accessTokenToUse = await refreshGoogleAccessToken(googleRefreshToken);
-      ({ response, data } = await createGoogleEvent(accessTokenToUse, payload));
+      ({ response, data } = await fetchGoogleEvents(accessTokenToUse));
     }
 
     if (!response.ok) {
-      console.log(
-        "CREATE EVENT GOOGLE RESPONSE:",
-        JSON.stringify(data, null, 2),
-      );
+      console.log("GOOGLE EVENTS ERROR:", JSON.stringify(data, null, 2));
 
       return NextResponse.json(
         {
           error:
-            data?.error?.message || "Erro ao criar evento no Google Calendar.",
+            data?.error?.message ||
+            data?.error ||
+            "Erro ao buscar eventos do Google Calendar.",
           details: data,
+          events: [],
         },
         { status: response.status },
       );
     }
 
-    return NextResponse.json({
-      message: "Evento criado com sucesso no Google Calendar.",
-      event: data,
-    });
+    const events = (data.items || [])
+      .filter((event: any) => {
+        return event.status !== "cancelled" && event.eventType !== "birthday";
+      })
+      .map((event: any) => ({
+        id: event.id,
+        title: event.summary || "Sem título",
+        description: event.description || "",
+        start: event.start?.dateTime || event.start?.date || null,
+        end: event.end?.dateTime || event.end?.date || null,
+        location: event.location || "",
+        htmlLink: event.htmlLink || "",
+        status: event.status || "",
+      }));
+
+    return NextResponse.json({ events });
   } catch (error: any) {
-    console.error("Erro ao criar evento:", error);
+    console.error("Erro interno na rota de eventos:", error);
 
     return NextResponse.json(
       {
         error:
-          error?.message || "Erro interno ao criar evento no Google Calendar.",
+          error?.message ||
+          "Erro interno ao buscar eventos do Google Calendar.",
+        events: [],
       },
       { status: 500 },
     );
