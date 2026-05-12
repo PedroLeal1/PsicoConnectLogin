@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import prisma from "../../../../lib/prisma";
+import { sendAppointmentCancelledEmail } from "../../../../lib/emails";
 
 async function refreshGoogleAccessToken(refreshToken: string) {
   const response = await fetch("https://oauth2.googleapis.com/token", {
@@ -78,7 +79,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { appointmentId } = body;
+    const { appointmentId, cancellationReason } = body;
+
+    const normalizedCancellationReason =
+      typeof cancellationReason === "string" ? cancellationReason.trim() : "";
 
     if (!appointmentId) {
       return NextResponse.json(
@@ -103,6 +107,28 @@ export async function POST(req: NextRequest) {
     const appointment = await prisma.appointment.findUnique({
       where: {
         id: appointmentId,
+      },
+      include: {
+        patient: {
+          include: {
+            user: {
+              select: {
+                name: true,
+                email: true,
+              },
+            },
+          },
+        },
+        psychologist: {
+          include: {
+            user: {
+              select: {
+                name: true,
+                email: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -166,12 +192,40 @@ export async function POST(req: NextRequest) {
       },
       data: {
         status: "CANCELLED",
+        cancelledAt: new Date(),
+        cancellationReason: normalizedCancellationReason || null,
       },
     });
 
+    let emailWarning: string | null = null;
+
+    try {
+      await sendAppointmentCancelledEmail({
+        patientEmail: appointment.patient.user.email,
+        patientName: appointment.patient.user.name,
+        psychologistName: appointment.psychologist.user.name,
+        title: appointment.title || "Consulta",
+        startDateTime: appointment.dateTime,
+        endDateTime: appointment.endDateTime,
+        location: appointment.location,
+        cancellationReason: normalizedCancellationReason || null,
+      });
+    } catch (emailError) {
+      console.error(
+        "Consulta cancelada, mas falhou ao enviar e-mail:",
+        emailError,
+      );
+
+      emailWarning =
+        "Consulta cancelada, mas não foi possível enviar o e-mail ao paciente.";
+    }
+
     return NextResponse.json({
-      message: "Consulta cancelada com sucesso.",
+      message: emailWarning
+        ? "Consulta cancelada com sucesso, mas houve falha no envio do e-mail."
+        : "Consulta cancelada com sucesso. O paciente foi notificado por e-mail.",
       appointment: updatedAppointment,
+      emailWarning,
     });
   } catch (error: any) {
     console.error("Erro ao cancelar consulta:", error);

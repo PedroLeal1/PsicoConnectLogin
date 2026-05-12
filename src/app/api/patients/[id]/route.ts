@@ -128,6 +128,8 @@ export async function GET(
           endDateTime: appointment.endDateTime?.toISOString() || null,
           status: appointment.status,
           googleEventLink: appointment.googleEventLink || "",
+          cancellationReason: appointment.cancellationReason || null,
+          cancelledAt: appointment.cancelledAt?.toISOString() || null,
           createdAt: appointment.createdAt.toISOString(),
         })),
       },

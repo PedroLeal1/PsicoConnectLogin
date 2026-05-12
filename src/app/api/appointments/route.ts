@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const { searchParams } = new URL(req.url);
-    const statusParam = searchParams.get("status") || "SCHEDULED";
+    const status = searchParams.get("status") || "SCHEDULED";
 
     const psychologist = await prisma.psychologist.findUnique({
       where: {
@@ -33,29 +33,17 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const now = new Date();
-
     const statusFilter =
-      statusParam === "ALL"
+      status === "ALL"
         ? {}
-        : {
-            status: statusParam === "CANCELLED" ? "CANCELLED" : "SCHEDULED",
-          };
-
-    const dateFilter =
-      statusParam === "CANCELLED" || statusParam === "ALL"
-        ? {}
-        : {
-            dateTime: {
-              gte: now,
-            },
-          };
+        : status === "CANCELLED"
+          ? { status: "CANCELLED" as const }
+          : { status: "SCHEDULED" as const };
 
     const appointments = await prisma.appointment.findMany({
       where: {
         psychologistId: psychologist.id,
         ...statusFilter,
-        ...dateFilter,
       },
       include: {
         patient: {
@@ -70,13 +58,12 @@ export async function GET(req: NextRequest) {
         },
       },
       orderBy: {
-        dateTime: "asc",
+        dateTime: status === "CANCELLED" ? "desc" : "asc",
       },
-      take: 30,
     });
 
     const events = appointments.map((appointment) => ({
-      id: appointment.id,
+      id: appointment.googleEventId || appointment.id,
       appointmentId: appointment.id,
       title: appointment.title || "Consulta",
       description: appointment.description || "",
@@ -89,9 +76,13 @@ export async function GET(req: NextRequest) {
       patientName: appointment.patient.user.name,
       patientEmail: appointment.patient.user.email,
       googleEventId: appointment.googleEventId || "",
+      cancellationReason: appointment.cancellationReason || null,
+      cancelledAt: appointment.cancelledAt?.toISOString() || null,
     }));
 
-    return NextResponse.json({ events });
+    return NextResponse.json({
+      events,
+    });
   } catch (error: any) {
     console.error("Erro ao listar consultas:", error);
 

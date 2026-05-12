@@ -82,6 +82,9 @@ model Appointment {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
+  cancellationReason String?
+cancelledAt         DateTime?
+
   @@index([dateTime])
   @@index([psychologistId, dateTime])
   @@index([patientId, dateTime])

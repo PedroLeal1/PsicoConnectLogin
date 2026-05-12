@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import prisma from "../../../../lib/prisma";
+import { sendAppointmentCreatedEmail } from "../../../../lib/emails";
 
 async function refreshGoogleAccessToken(refreshToken: string) {
   const response = await fetch("https://oauth2.googleapis.com/token", {
@@ -108,6 +109,14 @@ export async function POST(req: NextRequest) {
       where: {
         userId: String(token.id),
       },
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+      },
     });
 
     if (!psychologist) {
@@ -122,7 +131,18 @@ export async function POST(req: NextRequest) {
         id: patientId,
       },
       include: {
-        user: true,
+        user: {
+          select: {
+            name: true,
+            email: true,
+          },
+        },
+        psychologistLinks: {
+          where: {
+            psychologistId: psychologist.id,
+            active: true,
+          },
+        },
       },
     });
 
@@ -130,6 +150,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "Paciente não encontrado." },
         { status: 404 },
+      );
+    }
+
+    if (patient.psychologistLinks.length === 0) {
+      return NextResponse.json(
+        { error: "Este paciente não está vinculado a você." },
+        { status: 403 },
       );
     }
 
@@ -158,6 +185,7 @@ export async function POST(req: NextRequest) {
 
     if (response.status === 401 && googleRefreshToken) {
       accessTokenToUse = await refreshGoogleAccessToken(googleRefreshToken);
+
       ({ response, data } = await createGoogleEvent(
         accessTokenToUse,
         googlePayload,
@@ -206,10 +234,37 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    let emailWarning: string | null = null;
+
+    try {
+      await sendAppointmentCreatedEmail({
+        patientEmail: patient.user.email,
+        patientName: patient.user.name,
+        psychologistName: psychologist.user.name,
+        title: appointment.title || "Consulta",
+        startDateTime: appointment.dateTime,
+        endDateTime: appointment.endDateTime,
+        location: appointment.location,
+        description: appointment.description,
+        googleEventLink: appointment.googleEventLink,
+      });
+    } catch (emailError) {
+      console.error(
+        "Consulta criada, mas falhou ao enviar e-mail:",
+        emailError,
+      );
+
+      emailWarning =
+        "Consulta criada, mas não foi possível enviar o e-mail ao paciente.";
+    }
+
     return NextResponse.json({
-      message: "Consulta criada com sucesso.",
+      message: emailWarning
+        ? "Consulta criada com sucesso, mas houve falha no envio do e-mail."
+        : "Consulta criada com sucesso.",
       appointment,
       googleEvent: data,
+      emailWarning,
     });
   } catch (error: any) {
     console.error("Erro ao criar consulta:", error);

@@ -13,6 +13,8 @@ type Appointment = {
   endDateTime: string | null;
   status: "SCHEDULED" | "CANCELLED";
   googleEventLink: string;
+  cancellationReason: string | null;
+  cancelledAt: string | null;
   createdAt: string;
 };
 
@@ -809,11 +811,21 @@ export default function PatientDetailsPage() {
                       </p>
                     )}
 
-                    {appointment.description && (
-                      <p style={{ color: "#4b5563", marginBottom: "8px" }}>
-                        <strong>Descrição:</strong> {appointment.description}
-                      </p>
-                    )}
+                    {appointment.status === "CANCELLED" &&
+                      appointment.cancelledAt && (
+                        <p style={{ color: "#4b5563", marginBottom: "6px" }}>
+                          <strong>Cancelada em:</strong>{" "}
+                          {formatDate(appointment.cancelledAt)}
+                        </p>
+                      )}
+
+                    {appointment.status === "CANCELLED" &&
+                      appointment.cancellationReason && (
+                        <p style={{ color: "#4b5563", marginBottom: "8px" }}>
+                          <strong>Motivo do cancelamento:</strong>{" "}
+                          {appointment.cancellationReason}
+                        </p>
+                      )}
 
                     {appointment.googleEventLink && (
                       <a

@@ -18,6 +18,8 @@ type CalendarEvent = {
   patientName?: string;
   patientEmail?: string;
   googleEventId?: string;
+  cancellationReason?: string | null;
+  cancelledAt?: string | null;
 };
 
 type PatientOption = {
@@ -72,6 +74,8 @@ export default function AgendaPage() {
     id: string;
     title: string;
   } | null>(null);
+
+  const [cancellationReason, setCancellationReason] = useState("");
 
   async function loadEvents() {
     if (!googleConnected) {
@@ -194,7 +198,7 @@ export default function AgendaPage() {
 
   const currentStatusInfo = statusInfo[appointmentStatusFilter];
 
-  function formatDate(dateString: string | null) {
+  function formatDate(dateString: string | null | undefined) {
     if (!dateString) return "--";
 
     const date = new Date(dateString);
@@ -315,8 +319,9 @@ export default function AgendaPage() {
       handleCloseModal();
 
       showFeedback(
-        "success",
-        "Consulta criada com sucesso no sistema e no Google Calendar.",
+        data?.emailWarning ? "info" : "success",
+        data?.message ||
+          "Consulta criada com sucesso. O paciente foi notificado por e-mail.",
       );
     } catch (error: any) {
       setFormError(error.message || "Erro ao criar consulta.");
@@ -331,10 +336,17 @@ export default function AgendaPage() {
       return;
     }
 
+    setCancellationReason("");
+
     setAppointmentToCancel({
       id: appointmentId,
       title: title || "Consulta",
     });
+  }
+
+  function closeCancelModal() {
+    setAppointmentToCancel(null);
+    setCancellationReason("");
   }
 
   async function confirmCancelAppointment() {
@@ -350,6 +362,7 @@ export default function AgendaPage() {
         },
         body: JSON.stringify({
           appointmentId: appointmentToCancel.id,
+          cancellationReason,
         }),
       });
 
@@ -360,11 +373,12 @@ export default function AgendaPage() {
       }
 
       await loadEvents();
-      setAppointmentToCancel(null);
+      closeCancelModal();
 
       showFeedback(
-        "success",
-        "Consulta cancelada com sucesso. O evento também foi removido do Google Calendar.",
+        data?.emailWarning ? "info" : "success",
+        data?.message ||
+          "Consulta cancelada com sucesso. O paciente foi notificado por e-mail.",
       );
     } catch (error: any) {
       showFeedback("error", error.message || "Erro ao cancelar consulta.");
@@ -835,6 +849,21 @@ export default function AgendaPage() {
                       </div>
                     )}
 
+                    {event.status === "CANCELLED" && event.cancelledAt && (
+                      <div style={{ color: "#4b5563", marginBottom: "6px" }}>
+                        <strong>Cancelada em:</strong>{" "}
+                        {formatDate(event.cancelledAt)}
+                      </div>
+                    )}
+
+                    {event.status === "CANCELLED" &&
+                      event.cancellationReason && (
+                        <div style={{ color: "#4b5563", marginBottom: "10px" }}>
+                          <strong>Motivo do cancelamento:</strong>{" "}
+                          {event.cancellationReason}
+                        </div>
+                      )}
+
                     {event.htmlLink && (
                       <a
                         href={event.htmlLink}
@@ -964,7 +993,7 @@ export default function AgendaPage() {
 
       {appointmentToCancel && (
         <div
-          onClick={() => setAppointmentToCancel(null)}
+          onClick={closeCancelModal}
           style={{
             position: "fixed",
             inset: 0,
@@ -980,7 +1009,7 @@ export default function AgendaPage() {
             onClick={(e) => e.stopPropagation()}
             style={{
               width: "100%",
-              maxWidth: "460px",
+              maxWidth: "520px",
               backgroundColor: "#ffffff",
               borderRadius: "18px",
               padding: "24px",
@@ -1010,6 +1039,48 @@ export default function AgendaPage() {
               cancelada no sistema e removida do Google Calendar.
             </p>
 
+            <div style={{ marginBottom: "18px" }}>
+              <label
+                style={{
+                  display: "block",
+                  fontWeight: 700,
+                  color: "#111827",
+                  marginBottom: "8px",
+                }}
+              >
+                Motivo do cancelamento
+              </label>
+
+              <textarea
+                value={cancellationReason}
+                onChange={(e) => setCancellationReason(e.target.value)}
+                placeholder="Opcional. Ex.: Remarcação por conflito de horário."
+                rows={4}
+                style={{
+                  width: "100%",
+                  border: "1px solid #d1d5db",
+                  borderRadius: "12px",
+                  padding: "12px 14px",
+                  fontSize: "14px",
+                  outline: "none",
+                  resize: "vertical",
+                }}
+              />
+
+              <p
+                style={{
+                  color: "#6b7280",
+                  fontSize: "13px",
+                  marginTop: "8px",
+                  marginBottom: 0,
+                  lineHeight: 1.4,
+                }}
+              >
+                Se preenchido, esse motivo será enviado ao paciente no e-mail de
+                cancelamento.
+              </p>
+            </div>
+
             <div
               style={{
                 display: "flex",
@@ -1019,7 +1090,7 @@ export default function AgendaPage() {
             >
               <button
                 type="button"
-                onClick={() => setAppointmentToCancel(null)}
+                onClick={closeCancelModal}
                 style={{
                   backgroundColor: "#fff",
                   color: "#1f2937",
@@ -1029,6 +1100,7 @@ export default function AgendaPage() {
                   fontWeight: 700,
                   cursor: "pointer",
                 }}
+                disabled={cancelingAppointmentId === appointmentToCancel.id}
               >
                 Voltar
               </button>
