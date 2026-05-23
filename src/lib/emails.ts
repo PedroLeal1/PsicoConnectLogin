@@ -301,3 +301,120 @@ export async function sendAppointmentCancelledEmail({
     throw error;
   }
 }
+export async function sendAppointmentReminderEmail({
+  patientEmail,
+  patientName,
+  psychologistName,
+  title,
+  startDateTime,
+  endDateTime,
+  location,
+  description,
+  googleEventLink,
+}: AppointmentEmailPayload) {
+  const safePatientName = escapeHtml(patientName);
+  const safePsychologistName = escapeHtml(
+    psychologistName || "Profissional responsável",
+  );
+  const safeTitle = escapeHtml(title || "Consulta");
+  const safeLocation = escapeHtml(location || "Não informado");
+  const safeDescription = escapeHtml(description || "");
+  const patientAppointmentsLink = `${baseUrl}/minhas-consultas`;
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; padding: 24px; color: #111; line-height: 1.5;">
+      <h2 style="margin-bottom: 12px;">Lembrete de consulta</h2>
+
+      <p>Olá, ${safePatientName}.</p>
+
+      <p>
+        Este é um lembrete da sua consulta agendada no PsicoConnect.
+      </p>
+
+      <div style="
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        border-radius: 12px;
+        padding: 16px;
+        margin: 18px 0;
+      ">
+        <p><strong>Consulta:</strong> ${safeTitle}</p>
+        <p><strong>Profissional:</strong> ${safePsychologistName}</p>
+        <p><strong>Início:</strong> ${formatDateTime(startDateTime)}</p>
+        <p><strong>Fim:</strong> ${formatDateTime(endDateTime)}</p>
+        <p><strong>Local:</strong> ${safeLocation}</p>
+        ${
+          safeDescription
+            ? `<p><strong>Observações:</strong> ${safeDescription}</p>`
+            : ""
+        }
+      </div>
+
+      <p>
+        Acesse o PsicoConnect para confirmar presença, consultar os detalhes da sessão
+        ou solicitar cancelamento, se necessário.
+      </p>
+
+      <a
+        href="${patientAppointmentsLink}"
+        style="
+          display: inline-block;
+          background: #2563eb;
+          color: white;
+          text-decoration: none;
+          padding: 12px 18px;
+          border-radius: 8px;
+          font-weight: bold;
+          margin-right: 8px;
+        "
+      >
+        Abrir minhas consultas
+      </a>
+
+      ${
+        googleEventLink
+          ? `
+            <a
+              href="${googleEventLink}"
+              style="
+                display: inline-block;
+                background: #eff6ff;
+                color: #1d4ed8;
+                text-decoration: none;
+                padding: 12px 18px;
+                border-radius: 8px;
+                font-weight: bold;
+                border: 1px solid #bfdbfe;
+              "
+            >
+              Abrir no Google Calendar
+            </a>
+          `
+          : ""
+      }
+
+      <p style="margin-top: 20px; color: #4b5563; font-size: 14px;">
+        Esta é uma mensagem automática do PsicoConnect. Não responda este e-mail.
+      </p>
+    </div>
+  `;
+
+  try {
+    const result = await resend.emails.send({
+      from: emailFrom,
+      to: patientEmail,
+      subject: "Lembrete de consulta - PsicoConnect",
+      html,
+      headers: {
+        "X-Auto-Response-Suppress": "All",
+      },
+      tags: [{ name: "category", value: "appointment-reminder" }],
+    });
+
+    console.log("Email de lembrete de consulta enviado:", result);
+    return result;
+  } catch (error) {
+    console.error("Erro ao enviar email de lembrete de consulta:", error);
+    throw error;
+  }
+}

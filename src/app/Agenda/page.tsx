@@ -72,6 +72,7 @@ export default function AgendaPage() {
   const [savingAppointment, setSavingAppointment] = useState(false);
   const [cancelingAppointmentId, setCancelingAppointmentId] = useState("");
   const [reviewingCancellationId, setReviewingCancellationId] = useState("");
+  const [sendingReminderId, setSendingReminderId] = useState("");
 
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [formError, setFormError] = useState("");
@@ -516,6 +517,52 @@ export default function AgendaPage() {
       );
     } finally {
       setReviewingCancellationId("");
+    }
+  }
+
+  function canSendReminder(event: CalendarEvent) {
+    if (!event.appointmentId && !event.id) return false;
+    if (event.status === "CANCELLED") return false;
+    if (!event.start) return false;
+
+    return new Date(event.start) > new Date();
+  }
+
+  async function handleSendReminder(appointmentId: string | undefined) {
+    if (!appointmentId) {
+      showFeedback("error", "Consulta inválida.");
+      return;
+    }
+
+    try {
+      setSendingReminderId(appointmentId);
+
+      const response = await fetch(
+        `/api/appointments/${appointmentId}/send-reminder`,
+        {
+          method: "POST",
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Erro ao enviar lembrete por e-mail.");
+      }
+
+      await loadEvents();
+
+      showFeedback(
+        "success",
+        data?.message || "Lembrete enviado por e-mail com sucesso.",
+      );
+    } catch (error: any) {
+      showFeedback(
+        "error",
+        error.message || "Erro ao enviar lembrete por e-mail.",
+      );
+    } finally {
+      setSendingReminderId("");
     }
   }
 
@@ -1275,6 +1322,95 @@ export default function AgendaPage() {
                               : "Rejeitar solicitação"}
                           </button>
                         </div>
+                      </div>
+                    )}
+
+                    {canSendReminder(event) && (
+                      <div
+                        style={{
+                          backgroundColor: "#f8fafc",
+                          border: "1px solid #dbeafe",
+                          borderRadius: "16px",
+                          padding: "14px",
+                          marginTop: "12px",
+                          marginBottom: "12px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            color: "#1d4ed8",
+                            fontWeight: 900,
+                            marginBottom: "8px",
+                          }}
+                        >
+                          <i className="fa-solid fa-envelope"></i>
+                          Lembrete por e-mail
+                        </div>
+
+                        <p
+                          style={{
+                            color: "#4b5563",
+                            lineHeight: 1.5,
+                            marginBottom: "12px",
+                          }}
+                        >
+                          Envie um lembrete para o paciente com os dados da
+                          consulta e orientação para confirmar presença ou
+                          solicitar cancelamento no PsicoConnect.
+                        </p>
+
+                        {event.reminderEmailSentAt && (
+                          <p
+                            style={{
+                              color: "#065f46",
+                              fontSize: "13px",
+                              fontWeight: 800,
+                              marginBottom: "12px",
+                            }}
+                          >
+                            Último lembrete enviado em{" "}
+                            {formatDate(event.reminderEmailSentAt)}
+                          </p>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleSendReminder(event.appointmentId || event.id)
+                          }
+                          disabled={
+                            sendingReminderId ===
+                            (event.appointmentId || event.id)
+                          }
+                          style={{
+                            backgroundColor: "#eff6ff",
+                            color: "#1d4ed8",
+                            border: "1px solid #bfdbfe",
+                            borderRadius: "12px",
+                            padding: "10px 14px",
+                            fontWeight: 800,
+                            cursor:
+                              sendingReminderId ===
+                              (event.appointmentId || event.id)
+                                ? "not-allowed"
+                                : "pointer",
+                            opacity:
+                              sendingReminderId ===
+                              (event.appointmentId || event.id)
+                                ? 0.7
+                                : 1,
+                          }}
+                        >
+                          {sendingReminderId ===
+                          (event.appointmentId || event.id)
+                            ? "Enviando..."
+                            : event.reminderEmailSentAt
+                              ? "Reenviar lembrete por e-mail"
+                              : "Enviar lembrete por e-mail"}
+                        </button>
                       </div>
                     )}
 
