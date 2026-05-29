@@ -37,7 +37,7 @@ async function sendPasswordResetEmail({
   name: string;
   resetLink: string;
 }) {
-  const emailFrom = process.env.RESEND_FROM || "PsicoConnect <onboarding@resend.dev>";
+  const emailFrom = process.env.RESEND_FROM || "PsicoConnect <nao-responda@psicoconnect.site>";
   const safeName = escapeHtml(name || "usuário");
 
   const html = `
