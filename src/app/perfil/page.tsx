@@ -89,7 +89,7 @@ const pageStyle: CSSProperties = {
   minHeight: "calc(100vh - 48px)",
   padding: "36px",
   paddingBottom: "72px",
-  background: "#f8fbff",
+  background: "transparent",
   overflow: "visible",
 };
 
@@ -112,7 +112,7 @@ const cardStyle: CSSProperties = {
   border: "1px solid #e6edf7",
 };
 
-const mutedCardStyle: CSSProperties = {
+const softCardStyle: CSSProperties = {
   backgroundColor: "#f8fbff",
   borderRadius: "18px",
   padding: "16px",
@@ -270,25 +270,60 @@ function getInstagramUrl(username: string) {
   return `https://instagram.com/${cleanUsername}`;
 }
 
-function FieldInfo({
+function formatDate(value: string | null | undefined) {
+  if (!value) return "Não informado";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+  }).format(new Date(`${value}T00:00:00`));
+}
+
+function buildFormFromProfile(profile: ProfileData): ProfileForm {
+  return {
+    name: profile.name || "",
+    profileImageUrl: profile.profileImageUrl || "",
+    phone: formatPhone(profile.phone || ""),
+    city: profile.city || "",
+    state: sanitizeState(profile.state || ""),
+    bio: profile.bio || "",
+    professionalTitle: profile.psychologist?.professionalTitle || "",
+    approach: profile.psychologist?.approach || "",
+    specialties: profile.psychologist?.specialties || "",
+    education: profile.psychologist?.education || "",
+    targetAudience: profile.psychologist?.targetAudience || "",
+    instagramUrl: sanitizeInstagramUsername(profile.psychologist?.instagramUrl || ""),
+    socialName: profile.patient?.socialName || "",
+    birthDate: profile.patient?.birthDate || "",
+    contactPreference: profile.patient?.contactPreference || "",
+    emergencyContactName: profile.patient?.emergencyContactName || "",
+    emergencyContactPhone: formatPhone(profile.patient?.emergencyContactPhone || ""),
+    patientNotes: profile.patient?.patientNotes || "",
+  };
+}
+
+function InfoTile({
   label,
   value,
+  icon,
 }: {
   label: string;
   value: string | null | undefined;
+  icon: string;
 }) {
   return (
-    <div style={mutedCardStyle}>
+    <div style={softCardStyle}>
       <p
         style={{
           color: "#5272a6",
           fontSize: "12px",
           fontWeight: 900,
           marginBottom: "5px",
-          textTransform: "uppercase",
-          letterSpacing: "0.04em",
+          display: "flex",
+          alignItems: "center",
+          gap: "7px",
         }}
       >
+        <i className={icon}></i>
         {label}
       </p>
       <p
@@ -296,11 +331,58 @@ function FieldInfo({
           color: value ? "#001e5e" : "#94a3b8",
           fontSize: "14px",
           fontWeight: 900,
-          lineHeight: 1.4,
+          lineHeight: 1.45,
+          margin: 0,
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
         }}
       >
         {value || "Não informado"}
       </p>
+    </div>
+  );
+}
+
+function ProfilePhoto({
+  imageUrl,
+  name,
+  size = 120,
+}: {
+  imageUrl: string;
+  name: string;
+  size?: number;
+}) {
+  return (
+    <div
+      style={{
+        width: `${size}px`,
+        height: `${size}px`,
+        borderRadius: "32px",
+        overflow: "hidden",
+        background: "linear-gradient(135deg, #2563eb, #60a5fa)",
+        color: "#ffffff",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: size >= 120 ? "40px" : "28px",
+        fontWeight: 900,
+        border: "4px solid #ffffff",
+        boxShadow: "0 18px 38px rgba(15, 23, 42, 0.18)",
+        flexShrink: 0,
+      }}
+    >
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt="Foto de perfil"
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+          }}
+        />
+      ) : (
+        getInitials(name)
+      )}
     </div>
   );
 }
@@ -311,6 +393,7 @@ export default function PerfilPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [imageUploadError, setImageUploadError] = useState("");
@@ -334,30 +417,7 @@ export default function PerfilPage() {
         const loadedProfile = data.profile as ProfileData;
 
         setProfile(loadedProfile);
-        setForm({
-          name: loadedProfile.name || "",
-          profileImageUrl: loadedProfile.profileImageUrl || "",
-          phone: formatPhone(loadedProfile.phone || ""),
-          city: loadedProfile.city || "",
-          state: sanitizeState(loadedProfile.state || ""),
-          bio: loadedProfile.bio || "",
-          professionalTitle: loadedProfile.psychologist?.professionalTitle || "",
-          approach: loadedProfile.psychologist?.approach || "",
-          specialties: loadedProfile.psychologist?.specialties || "",
-          education: loadedProfile.psychologist?.education || "",
-          targetAudience: loadedProfile.psychologist?.targetAudience || "",
-          instagramUrl: sanitizeInstagramUsername(
-            loadedProfile.psychologist?.instagramUrl || "",
-          ),
-          socialName: loadedProfile.patient?.socialName || "",
-          birthDate: loadedProfile.patient?.birthDate || "",
-          contactPreference: loadedProfile.patient?.contactPreference || "",
-          emergencyContactName: loadedProfile.patient?.emergencyContactName || "",
-          emergencyContactPhone: formatPhone(
-            loadedProfile.patient?.emergencyContactPhone || "",
-          ),
-          patientNotes: loadedProfile.patient?.patientNotes || "",
-        });
+        setForm(buildFormFromProfile(loadedProfile));
       } catch (err: any) {
         setError(err?.message || "Erro ao carregar perfil.");
       } finally {
@@ -387,6 +447,17 @@ export default function PerfilPage() {
       ...current,
       [field]: sanitizedValue,
     }));
+  }
+
+  function cancelEditing() {
+    if (profile) {
+      setForm(buildFormFromProfile(profile));
+    }
+
+    setEditing(false);
+    setError("");
+    setSuccess("");
+    setImageUploadError("");
   }
 
   async function handleProfileImageUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -514,6 +585,7 @@ export default function PerfilPage() {
       }
 
       setSuccess(data?.message || "Perfil atualizado com sucesso.");
+      setEditing(false);
       setForm((current) => ({
         ...current,
         name: payload.name,
@@ -569,6 +641,10 @@ export default function PerfilPage() {
   const isPatient = profile?.role === "PATIENT";
   const whatsappUrl = getWhatsAppUrl(form.phone);
   const instagramUrl = isPsychologist ? getInstagramUrl(form.instagramUrl) : "";
+  const location = [form.city, form.state].filter(Boolean).join("/");
+  const professionalSubtitle = isPsychologist
+    ? form.professionalTitle || "Psicólogo(a)"
+    : getRoleLabel(profile?.role || "PATIENT");
 
   if (loading) {
     return (
@@ -677,9 +753,8 @@ export default function PerfilPage() {
               lineHeight: 1.6,
             }}
           >
-            Atualize seus dados de apresentação, contato e informações
-            complementares para deixar sua experiência no PsicoConnect mais
-            completa.
+            Visualize como suas informações aparecem no PsicoConnect e edite seus
+            dados quando precisar.
           </p>
         </div>
       </section>
@@ -718,246 +793,106 @@ export default function PerfilPage() {
         </div>
       ) : null}
 
-      <form onSubmit={handleSubmit}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "340px minmax(0, 1fr)",
-            gap: "24px",
-            alignItems: "start",
-          }}
-        >
-          <aside style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-            <section style={cardStyle}>
+      {!editing ? (
+        <section style={{ ...cardStyle, padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "30px" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: "20px",
+                alignItems: "center",
+                marginTop: 0,
+                marginBottom: "24px",
+                flexWrap: "wrap",
+              }}
+            >
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: "16px",
-                  marginBottom: "20px",
+                  gap: "18px",
+                  minWidth: "280px",
                 }}
               >
-                <div
-                  style={{
-                    width: "92px",
-                    height: "92px",
-                    borderRadius: "26px",
-                    overflow: "hidden",
-                    background: "linear-gradient(135deg, #2563eb, #60a5fa)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "#ffffff",
-                    fontSize: "28px",
-                    fontWeight: 900,
-                    flexShrink: 0,
-                    boxShadow: "0 14px 34px rgba(37, 99, 235, 0.22)",
-                  }}
-                >
-                  {form.profileImageUrl ? (
-                    <img
-                      src={form.profileImageUrl}
-                      alt="Foto de perfil"
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                      }}
-                      onError={(event) => {
-                        event.currentTarget.style.display = "none";
-                      }}
-                    />
-                  ) : (
-                    getInitials(form.name)
-                  )}
-                </div>
+                <ProfilePhoto imageUrl={form.profileImageUrl} name={form.name} size={132} />
 
-                <div style={{ minWidth: 0 }}>
+                <div style={{ paddingBottom: "10px", minWidth: 0 }}>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      backgroundColor: "#eff6ff",
+                      color: "#1d4ed8",
+                      border: "1px solid #bfdbfe",
+                      borderRadius: "999px",
+                      padding: "6px 11px",
+                      fontSize: "12px",
+                      fontWeight: 900,
+                      marginBottom: "8px",
+                    }}
+                  >
+                    <i className="fa-solid fa-id-badge"></i>
+                    {getRoleLabel(profile.role)}
+                  </span>
+
                   <h2
                     style={{
                       color: "#001e5e",
-                      fontSize: "22px",
+                      fontSize: "34px",
                       fontWeight: 900,
-                      marginBottom: "4px",
-                      overflowWrap: "anywhere",
+                      lineHeight: 1.05,
+                      marginBottom: "6px",
+                      wordBreak: "break-word",
                     }}
                   >
                     {form.name || "Seu nome"}
                   </h2>
+
                   <p
                     style={{
                       color: "#5272a6",
-                      fontSize: "14px",
-                      overflowWrap: "anywhere",
+                      fontSize: "15px",
+                      fontWeight: 800,
+                      margin: 0,
                     }}
                   >
-                    {profile.email}
+                    {professionalSubtitle}
+                    {location ? ` · ${location}` : ""}
                   </p>
                 </div>
               </div>
 
               <div
                 style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  backgroundColor: "#eff6ff",
-                  color: "#1d4ed8",
-                  border: "1px solid #bfdbfe",
-                  borderRadius: "999px",
-                  padding: "8px 12px",
-                  fontSize: "13px",
-                  fontWeight: 900,
-                  marginBottom: "16px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "10px",
+                  alignItems: "flex-end",
+                  paddingBottom: "10px",
                 }}
               >
-                <i className="fa-solid fa-id-badge"></i>
-                {getRoleLabel(profile.role)}
-              </div>
-
-              <div style={{ marginBottom: "16px" }}>
-                <label
-                  htmlFor="profile-image-upload"
+                <button
+                  type="button"
+                  onClick={() => setEditing(true)}
                   style={{
                     ...secondaryButtonStyle,
-                    width: "100%",
-                    cursor: uploadingImage ? "not-allowed" : "pointer",
-                    opacity: uploadingImage ? 0.7 : 1,
+                    backgroundColor: "#ffffff",
+                    color: "#1d4ed8",
+                    boxShadow: "0 10px 24px rgba(15, 23, 42, 0.08)",
                   }}
                 >
-                  {uploadingImage ? (
-                    <>
-                      <i className="fa-solid fa-spinner fa-spin"></i>
-                      Enviando foto...
-                    </>
-                  ) : (
-                    <>
-                      <i className="fa-solid fa-camera"></i>
-                      Escolher foto
-                    </>
-                  )}
-                </label>
-
-                <input
-                  id="profile-image-upload"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={handleProfileImageUpload}
-                  disabled={uploadingImage}
-                  style={{ display: "none" }}
-                />
-
-                <p
-                  style={{
-                    color: "#64748b",
-                    fontSize: "12px",
-                    lineHeight: 1.45,
-                    fontWeight: 700,
-                    marginTop: "8px",
-                    marginBottom: 0,
-                  }}
-                >
-                  A imagem será enviada para o Cloudinary e ficará salva no
-                  perfil, sem depender da pasta public do projeto.
-                </p>
-
-                {imageUploadError ? (
-                  <p
-                    style={{
-                      color: "#b91c1c",
-                      fontSize: "12px",
-                      lineHeight: 1.45,
-                      fontWeight: 800,
-                      marginTop: "8px",
-                      marginBottom: 0,
-                    }}
-                  >
-                    {imageUploadError}
-                  </p>
-                ) : null}
-              </div>
-
-              <div style={{ display: "grid", gap: "10px" }}>
-                {profile.psychologist ? (
-                  <FieldInfo label="CRP" value={profile.psychologist.crp} />
-                ) : null}
-                <FieldInfo label="Cidade" value={form.city} />
-                <FieldInfo label="Estado" value={form.state} />
-                <FieldInfo label="Telefone" value={form.phone} />
-              </div>
-
-              {whatsappUrl ? (
-                <a
-                  href={whatsappUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    ...secondaryButtonStyle,
-                    width: "100%",
-                    marginTop: "14px",
-                    color: "#047857",
-                    backgroundColor: "#ecfdf5",
-                    border: "1px solid #a7f3d0",
-                  }}
-                >
-                  <i className="fa-brands fa-whatsapp"></i>
-                  Abrir WhatsApp
-                </a>
-              ) : null}
-            </section>
-
-            <section style={cardStyle}>
-              <h3
-                style={{
-                  color: "#001e5e",
-                  fontSize: "18px",
-                  fontWeight: 900,
-                  marginBottom: "10px",
-                }}
-              >
-                Prévia pública
-              </h3>
-              <p
-                style={{
-                  color: "#5272a6",
-                  fontSize: "14px",
-                  lineHeight: 1.6,
-                  marginBottom: "14px",
-                }}
-              >
-                Essas informações ajudam a tornar o contato mais humano e
-                organizado dentro da plataforma.
-              </p>
-
-              <div
-                style={{
-                  backgroundColor: "#f8fbff",
-                  border: "1px solid #dbe7ff",
-                  borderRadius: "18px",
-                  padding: "16px",
-                }}
-              >
-                <p
-                  style={{
-                    color: "#001e5e",
-                    fontSize: "16px",
-                    fontWeight: 900,
-                    marginBottom: "6px",
-                  }}
-                >
-                  {form.name || "Nome do usuário"}
-                </p>
-                <p style={{ color: "#5272a6", fontSize: "14px", lineHeight: 1.6 }}>
-                  {form.bio ||
-                    "Quando você preencher o campo sobre mim, o resumo aparecerá aqui."}
-                </p>
+                  <i className="fa-solid fa-pen-to-square"></i>
+                  Editar perfil
+                </button>
 
                 <div
                   style={{
                     display: "flex",
-                    flexWrap: "wrap",
                     gap: "10px",
-                    marginTop: "14px",
+                    flexWrap: "wrap",
+                    justifyContent: "flex-end",
                   }}
                 >
                   {whatsappUrl ? (
@@ -966,10 +901,9 @@ export default function PerfilPage() {
                       target="_blank"
                       rel="noreferrer"
                       style={{
-                        ...secondaryButtonStyle,
-                        color: "#047857",
-                        backgroundColor: "#ecfdf5",
-                        border: "1px solid #a7f3d0",
+                        ...primaryButtonStyle,
+                        background: "linear-gradient(135deg, #059669, #22c55e)",
+                        boxShadow: "0 10px 24px rgba(34, 197, 94, 0.20)",
                       }}
                     >
                       <i className="fa-brands fa-whatsapp"></i>
@@ -985,338 +919,195 @@ export default function PerfilPage() {
                       style={secondaryButtonStyle}
                     >
                       <i className="fa-brands fa-instagram"></i>
-                      Instagram
+                      @{sanitizeInstagramUsername(form.instagramUrl)}
                     </a>
                   ) : null}
                 </div>
               </div>
-            </section>
-          </aside>
+            </div>
 
-          <section style={{ display: "flex", flexDirection: "column", gap: "22px" }}>
-            <section style={cardStyle}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  justifyContent: "space-between",
-                  gap: "18px",
-                  marginBottom: "18px",
-                }}
-              >
-                <div>
-                  <h2 style={sectionTitleStyle}>Dados básicos</h2>
-                  <p style={sectionDescriptionStyle}>
-                    Informações gerais usadas para identificação e comunicação na
-                    plataforma.
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1.1fr 0.9fr",
+                gap: "22px",
+                alignItems: "start",
+              }}
+            >
+              <section style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+                <div style={softCardStyle}>
+                  <p
+                    style={{
+                      color: "#5272a6",
+                      fontSize: "13px",
+                      fontWeight: 900,
+                      marginBottom: "8px",
+                    }}
+                  >
+                    Sobre
+                  </p>
+                  <p
+                    style={{
+                      color: form.bio ? "#334155" : "#94a3b8",
+                      lineHeight: 1.7,
+                      margin: 0,
+                      whiteSpace: "pre-wrap",
+                    }}
+                  >
+                    {form.bio || "Você ainda não escreveu uma apresentação."}
                   </p>
                 </div>
 
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    backgroundColor: "#f8fbff",
-                    color: "#1d4ed8",
-                    border: "1px solid #dbe7ff",
-                    borderRadius: "999px",
-                    padding: "8px 12px",
-                    fontSize: "12px",
-                    fontWeight: 900,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  <i className="fa-solid fa-lock"></i>
-                  E-mail não editável
-                </span>
-              </div>
+                {isPsychologist ? (
+                  <div style={cardStyle}>
+                    <h3 style={sectionTitleStyle}>Atuação profissional</h3>
+                    <p style={sectionDescriptionStyle}>
+                      Essas informações ajudam os pacientes a conhecerem melhor seu
+                      perfil profissional.
+                    </p>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                  gap: "16px",
-                }}
-              >
-                <label style={labelStyle}>
-                  Nome completo
-                  <input
-                    style={inputStyle}
-                    value={form.name}
-                    onChange={(event) => updateField("name", event.target.value)}
-                    placeholder="Seu nome completo"
-                  />
-                </label>
-
-                <label style={labelStyle}>
-                  Telefone / WhatsApp
-                  <input
-                    style={inputStyle}
-                    value={form.phone}
-                    onChange={(event) => updateField("phone", event.target.value)}
-                    placeholder="(83) 99999-9999"
-                    inputMode="numeric"
-                    autoComplete="tel"
-                  />
-                </label>
-
-                <label style={labelStyle}>
-                  Cidade
-                  <input
-                    style={inputStyle}
-                    value={form.city}
-                    onChange={(event) => updateField("city", event.target.value)}
-                    placeholder="João Pessoa"
-                  />
-                </label>
-
-                <label style={labelStyle}>
-                  Estado
-                  <input
-                    style={inputStyle}
-                    value={form.state}
-                    onChange={(event) => updateField("state", event.target.value)}
-                    placeholder="PB"
-                    maxLength={2}
-                  />
-                </label>
-
-                <label style={labelStyle}>
-                  E-mail
-                  <input
-                    style={{
-                      ...inputStyle,
-                      backgroundColor: "#f8fbff",
-                      color: "#64748b",
-                      cursor: "not-allowed",
-                    }}
-                    value={profile.email}
-                    disabled
-                  />
-                </label>
-              </div>
-
-              <label style={{ ...labelStyle, marginTop: "16px" }}>
-                Sobre mim
-                <textarea
-                  style={textareaStyle}
-                  value={form.bio}
-                  onChange={(event) => updateField("bio", event.target.value)}
-                  placeholder="Escreva uma breve apresentação sobre você."
-                />
-              </label>
-            </section>
-
-            {isPsychologist ? (
-              <section style={cardStyle}>
-                <h2 style={sectionTitleStyle}>Informações profissionais</h2>
-                <p style={sectionDescriptionStyle}>
-                  Esses dados ajudam o paciente a conhecer melhor sua atuação
-                  profissional. O WhatsApp será gerado automaticamente a partir do
-                  telefone informado acima.
-                </p>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                    gap: "16px",
-                  }}
-                >
-                  <label style={labelStyle}>
-                    Título profissional
-                    <input
-                      style={inputStyle}
-                      value={form.professionalTitle}
-                      onChange={(event) =>
-                        updateField("professionalTitle", event.target.value)
-                      }
-                      placeholder="Psicóloga Clínica"
-                    />
-                  </label>
-
-                  <label style={labelStyle}>
-                    Abordagem
-                    <input
-                      style={inputStyle}
-                      value={form.approach}
-                      onChange={(event) => updateField("approach", event.target.value)}
-                      placeholder="Terapia Cognitivo-Comportamental"
-                    />
-                  </label>
-
-                  <label style={labelStyle}>
-                    Público atendido
-                    <input
-                      style={inputStyle}
-                      value={form.targetAudience}
-                      onChange={(event) =>
-                        updateField("targetAudience", event.target.value)
-                      }
-                      placeholder="Adolescentes e adultos"
-                    />
-                  </label>
-
-                  <label style={labelStyle}>
-                    Usuário do Instagram
-                    <input
-                      style={inputStyle}
-                      value={form.instagramUrl}
-                      onChange={(event) =>
-                        updateField("instagramUrl", event.target.value)
-                      }
-                      placeholder="Usuário"
-                    />
-                    <span
+                    <div
                       style={{
-                        color: "#64748b",
-                        fontSize: "12px",
-                        lineHeight: 1.4,
-                        fontWeight: 700,
+                        display: "grid",
+                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                        gap: "14px",
                       }}
                     >
-                      Informe apenas o usuário. Pode colar com @ ou link que o sistema
-                      limpa automaticamente.
-                    </span>
-                  </label>
-                </div>
+                      <InfoTile
+                        label="CRP"
+                        value={profile.psychologist?.crp}
+                        icon="fa-solid fa-id-card"
+                      />
+                      <InfoTile
+                        label="Abordagem"
+                        value={form.approach}
+                        icon="fa-solid fa-comments"
+                      />
+                      <InfoTile
+                        label="Público atendido"
+                        value={form.targetAudience}
+                        icon="fa-solid fa-users"
+                      />
+                      <InfoTile
+                        label="Especialidades"
+                        value={form.specialties}
+                        icon="fa-solid fa-star"
+                      />
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <InfoTile
+                          label="Formação"
+                          value={form.education}
+                          icon="fa-solid fa-graduation-cap"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
 
-                <label style={{ ...labelStyle, marginTop: "16px" }}>
-                  Especialidades
-                  <textarea
-                    style={textareaStyle}
-                    value={form.specialties}
-                    onChange={(event) => updateField("specialties", event.target.value)}
-                    placeholder="Ansiedade, depressão, autoestima, orientação parental..."
-                  />
-                </label>
+                {isPatient ? (
+                  <div style={cardStyle}>
+                    <h3 style={sectionTitleStyle}>Informações complementares</h3>
+                    <p style={sectionDescriptionStyle}>
+                      Dados visíveis para o psicólogo vinculado ao acompanhamento.
+                    </p>
 
-                <label style={{ ...labelStyle, marginTop: "16px" }}>
-                  Formação
-                  <textarea
-                    style={textareaStyle}
-                    value={form.education}
-                    onChange={(event) => updateField("education", event.target.value)}
-                    placeholder="Descreva sua formação, pós-graduação, cursos e experiências relevantes."
-                  />
-                </label>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                        gap: "14px",
+                      }}
+                    >
+                      <InfoTile
+                        label="Nome social"
+                        value={form.socialName}
+                        icon="fa-solid fa-user"
+                      />
+                      <InfoTile
+                        label="Nascimento"
+                        value={formatDate(form.birthDate)}
+                        icon="fa-solid fa-cake-candles"
+                      />
+                      <InfoTile
+                        label="Preferência de contato"
+                        value={form.contactPreference}
+                        icon="fa-solid fa-message"
+                      />
+                      <InfoTile
+                        label="Contato de emergência"
+                        value={form.emergencyContactName}
+                        icon="fa-solid fa-triangle-exclamation"
+                      />
+                      <InfoTile
+                        label="Telefone de emergência"
+                        value={form.emergencyContactPhone}
+                        icon="fa-solid fa-phone"
+                      />
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <InfoTile
+                          label="Observações"
+                          value={form.patientNotes}
+                          icon="fa-solid fa-notes-medical"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </section>
-            ) : null}
 
-            {isPatient ? (
-              <section style={cardStyle}>
-                <h2 style={sectionTitleStyle}>Informações complementares</h2>
-                <p style={sectionDescriptionStyle}>
-                  Dados que podem auxiliar o psicólogo a compreender preferências
-                  e necessidades de contato.
-                </p>
+              <aside style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+                <div style={cardStyle}>
+                  <h3 style={sectionTitleStyle}>Contato</h3>
+                  <p style={sectionDescriptionStyle}>
+                    Informações principais para comunicação dentro e fora da plataforma.
+                  </p>
 
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                    gap: "16px",
-                  }}
-                >
-                  <label style={labelStyle}>
-                    Nome social
-                    <input
-                      style={inputStyle}
-                      value={form.socialName}
-                      onChange={(event) => updateField("socialName", event.target.value)}
-                      placeholder="Opcional"
-                    />
-                  </label>
-
-                  <label style={labelStyle}>
-                    Data de nascimento
-                    <input
-                      type="date"
-                      style={inputStyle}
-                      value={form.birthDate}
-                      onChange={(event) => updateField("birthDate", event.target.value)}
-                    />
-                  </label>
-
-                  <label style={labelStyle}>
-                    Preferência de contato
-                    <input
-                      style={inputStyle}
-                      value={form.contactPreference}
-                      onChange={(event) =>
-                        updateField("contactPreference", event.target.value)
-                      }
-                      placeholder="Mensagem pela plataforma, e-mail..."
-                    />
-                  </label>
-
-                  <label style={labelStyle}>
-                    Contato de emergência
-                    <input
-                      style={inputStyle}
-                      value={form.emergencyContactName}
-                      onChange={(event) =>
-                        updateField("emergencyContactName", event.target.value)
-                      }
-                      placeholder="Nome do contato"
-                    />
-                  </label>
-
-                  <label style={labelStyle}>
-                    Telefone de emergência
-                    <input
-                      style={inputStyle}
-                      value={form.emergencyContactPhone}
-                      onChange={(event) =>
-                        updateField("emergencyContactPhone", event.target.value)
-                      }
-                      placeholder="(83) 99999-9999"
-                      inputMode="numeric"
-                      autoComplete="tel"
-                    />
-                  </label>
+                  <div style={{ display: "grid", gap: "12px" }}>
+                    <InfoTile label="E-mail" value={profile.email} icon="fa-solid fa-envelope" />
+                    <InfoTile label="Telefone" value={form.phone} icon="fa-solid fa-phone" />
+                    <InfoTile label="Cidade/UF" value={location} icon="fa-solid fa-location-dot" />
+                    {isPsychologist ? (
+                      <InfoTile
+                        label="Instagram"
+                        value={
+                          form.instagramUrl
+                            ? `@${sanitizeInstagramUsername(form.instagramUrl)}`
+                            : ""
+                        }
+                        icon="fa-brands fa-instagram"
+                      />
+                    ) : null}
+                  </div>
                 </div>
+              </aside>
+            </div>
+          </div>
+        </section>
+      ) : (
+        <form onSubmit={handleSubmit}>
+          <section
+            style={{
+              ...cardStyle,
+              marginBottom: "22px",
+              display: "flex",
+              justifyContent: "space-between",
+              gap: "16px",
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <h2 style={sectionTitleStyle}>Editar perfil</h2>
+              <p style={{ ...sectionDescriptionStyle, marginBottom: 0 }}>
+                Altere as informações que ficarão salvas no seu perfil.
+              </p>
+            </div>
 
-                <label style={{ ...labelStyle, marginTop: "16px" }}>
-                  Observações para o psicólogo
-                  <textarea
-                    style={textareaStyle}
-                    value={form.patientNotes}
-                    onChange={(event) => updateField("patientNotes", event.target.value)}
-                    placeholder="Informações importantes que você deseja compartilhar com o profissional."
-                  />
-                </label>
-              </section>
-            ) : null}
-
-            <section
-              style={{
-                ...cardStyle,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: "16px",
-                position: "sticky",
-                bottom: "20px",
-                zIndex: 5,
-              }}
-            >
-              <div>
-                <p
-                  style={{
-                    color: "#001e5e",
-                    fontSize: "16px",
-                    fontWeight: 900,
-                    marginBottom: "4px",
-                  }}
-                >
-                  Salvar alterações
-                </p>
-                <p style={{ color: "#5272a6", fontSize: "14px", lineHeight: 1.5 }}>
-                  Revise os dados antes de atualizar seu perfil.
-                </p>
-              </div>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <button type="button" onClick={cancelEditing} style={secondaryButtonStyle}>
+                <i className="fa-solid fa-xmark"></i>
+                Cancelar
+              </button>
 
               <button
                 type="submit"
@@ -1327,7 +1118,7 @@ export default function PerfilPage() {
                     ? "#94a3b8"
                     : "linear-gradient(135deg, #2563eb, #4f8cff)",
                   cursor: saving ? "not-allowed" : "pointer",
-                  minWidth: "170px",
+                  minWidth: "160px",
                 }}
               >
                 {saving ? (
@@ -1338,14 +1129,463 @@ export default function PerfilPage() {
                 ) : (
                   <>
                     <i className="fa-solid fa-floppy-disk"></i>
-                    Salvar perfil
+                    Salvar
                   </>
                 )}
               </button>
-            </section>
+            </div>
           </section>
-        </div>
-      </form>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "340px minmax(0, 1fr)",
+              gap: "24px",
+              alignItems: "start",
+            }}
+          >
+            <aside style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+              <section style={cardStyle}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "16px",
+                    marginBottom: "20px",
+                  }}
+                >
+                  <ProfilePhoto imageUrl={form.profileImageUrl} name={form.name} size={92} />
+
+                  <div style={{ minWidth: 0 }}>
+                    <h2
+                      style={{
+                        color: "#001e5e",
+                        fontSize: "22px",
+                        fontWeight: 900,
+                        marginBottom: "4px",
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {form.name || "Seu nome"}
+                    </h2>
+                    <p
+                      style={{
+                        color: "#5272a6",
+                        fontSize: "14px",
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {profile.email}
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    backgroundColor: "#eff6ff",
+                    color: "#1d4ed8",
+                    border: "1px solid #bfdbfe",
+                    borderRadius: "999px",
+                    padding: "8px 12px",
+                    fontSize: "13px",
+                    fontWeight: 900,
+                    marginBottom: "16px",
+                  }}
+                >
+                  <i className="fa-solid fa-id-badge"></i>
+                  {getRoleLabel(profile.role)}
+                </div>
+
+                <div style={{ marginBottom: "16px" }}>
+                  <label
+                    htmlFor="profile-image-upload"
+                    style={{
+                      ...secondaryButtonStyle,
+                      width: "100%",
+                      cursor: uploadingImage ? "not-allowed" : "pointer",
+                      opacity: uploadingImage ? 0.7 : 1,
+                    }}
+                  >
+                    {uploadingImage ? (
+                      <>
+                        <i className="fa-solid fa-spinner fa-spin"></i>
+                        Enviando foto...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fa-solid fa-camera"></i>
+                        Escolher foto
+                      </>
+                    )}
+                  </label>
+
+                  <input
+                    id="profile-image-upload"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={handleProfileImageUpload}
+                    disabled={uploadingImage}
+                    style={{ display: "none" }}
+                  />
+
+                  <p
+                    style={{
+                      color: "#64748b",
+                      fontSize: "12px",
+                      lineHeight: 1.45,
+                      fontWeight: 700,
+                      marginTop: "8px",
+                      marginBottom: 0,
+                    }}
+                  >
+                    A imagem será enviada para o Cloudinary e ficará salva no perfil.
+                  </p>
+
+                  {imageUploadError ? (
+                    <p
+                      style={{
+                        color: "#b91c1c",
+                        fontSize: "12px",
+                        lineHeight: 1.45,
+                        fontWeight: 800,
+                        marginTop: "8px",
+                        marginBottom: 0,
+                      }}
+                    >
+                      {imageUploadError}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div style={{ display: "grid", gap: "10px" }}>
+                  {profile.psychologist ? (
+                    <InfoTile label="CRP" value={profile.psychologist.crp} icon="fa-solid fa-id-card" />
+                  ) : null}
+                  <InfoTile label="Cidade" value={form.city} icon="fa-solid fa-location-dot" />
+                  <InfoTile label="Estado" value={form.state} icon="fa-solid fa-map" />
+                  <InfoTile label="Telefone" value={form.phone} icon="fa-solid fa-phone" />
+                </div>
+
+                {whatsappUrl ? (
+                  <a
+                    href={whatsappUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      ...secondaryButtonStyle,
+                      width: "100%",
+                      marginTop: "14px",
+                      color: "#047857",
+                      backgroundColor: "#ecfdf5",
+                      border: "1px solid #a7f3d0",
+                    }}
+                  >
+                    <i className="fa-brands fa-whatsapp"></i>
+                    Abrir WhatsApp
+                  </a>
+                ) : null}
+              </section>
+            </aside>
+
+            <section style={{ display: "flex", flexDirection: "column", gap: "22px" }}>
+              <section style={cardStyle}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    justifyContent: "space-between",
+                    gap: "18px",
+                    marginBottom: "18px",
+                  }}
+                >
+                  <div>
+                    <h2 style={sectionTitleStyle}>Dados básicos</h2>
+                    <p style={sectionDescriptionStyle}>
+                      Informações gerais usadas para identificação e comunicação na plataforma.
+                    </p>
+                  </div>
+
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      backgroundColor: "#f8fbff",
+                      color: "#1d4ed8",
+                      border: "1px solid #dbe7ff",
+                      borderRadius: "999px",
+                      padding: "8px 12px",
+                      fontSize: "12px",
+                      fontWeight: 900,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <i className="fa-solid fa-lock"></i>
+                    E-mail não editável
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                    gap: "16px",
+                  }}
+                >
+                  <label style={labelStyle}>
+                    Nome completo
+                    <input
+                      style={inputStyle}
+                      value={form.name}
+                      onChange={(event) => updateField("name", event.target.value)}
+                      placeholder="Seu nome completo"
+                    />
+                  </label>
+
+                  <label style={labelStyle}>
+                    Telefone / WhatsApp
+                    <input
+                      style={inputStyle}
+                      value={form.phone}
+                      onChange={(event) => updateField("phone", event.target.value)}
+                      placeholder="(83) 99999-9999"
+                      inputMode="numeric"
+                      autoComplete="tel"
+                    />
+                  </label>
+
+                  <label style={labelStyle}>
+                    Cidade
+                    <input
+                      style={inputStyle}
+                      value={form.city}
+                      onChange={(event) => updateField("city", event.target.value)}
+                      placeholder="João Pessoa"
+                    />
+                  </label>
+
+                  <label style={labelStyle}>
+                    Estado
+                    <input
+                      style={inputStyle}
+                      value={form.state}
+                      onChange={(event) => updateField("state", event.target.value)}
+                      placeholder="PB"
+                      maxLength={2}
+                    />
+                  </label>
+
+                  <label style={labelStyle}>
+                    E-mail
+                    <input
+                      style={{
+                        ...inputStyle,
+                        backgroundColor: "#f8fbff",
+                        color: "#64748b",
+                        cursor: "not-allowed",
+                      }}
+                      value={profile.email}
+                      disabled
+                    />
+                  </label>
+                </div>
+
+                <label style={{ ...labelStyle, marginTop: "16px" }}>
+                  Sobre mim
+                  <textarea
+                    style={textareaStyle}
+                    value={form.bio}
+                    onChange={(event) => updateField("bio", event.target.value)}
+                    placeholder="Escreva uma breve apresentação sobre você."
+                  />
+                </label>
+              </section>
+
+              {isPsychologist ? (
+                <section style={cardStyle}>
+                  <h2 style={sectionTitleStyle}>Informações profissionais</h2>
+                  <p style={sectionDescriptionStyle}>
+                    Esses dados ajudam o paciente a conhecer melhor sua atuação profissional.
+                    O WhatsApp será gerado automaticamente a partir do telefone informado acima.
+                  </p>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: "16px",
+                    }}
+                  >
+                    <label style={labelStyle}>
+                      Título profissional
+                      <input
+                        style={inputStyle}
+                        value={form.professionalTitle}
+                        onChange={(event) =>
+                          updateField("professionalTitle", event.target.value)
+                        }
+                        placeholder="Psicóloga Clínica"
+                      />
+                    </label>
+
+                    <label style={labelStyle}>
+                      Abordagem
+                      <input
+                        style={inputStyle}
+                        value={form.approach}
+                        onChange={(event) => updateField("approach", event.target.value)}
+                        placeholder="Terapia Cognitivo-Comportamental"
+                      />
+                    </label>
+
+                    <label style={labelStyle}>
+                      Público atendido
+                      <input
+                        style={inputStyle}
+                        value={form.targetAudience}
+                        onChange={(event) =>
+                          updateField("targetAudience", event.target.value)
+                        }
+                        placeholder="Adolescentes e adultos"
+                      />
+                    </label>
+
+                    <label style={labelStyle}>
+                      Usuário do Instagram
+                      <input
+                        style={inputStyle}
+                        value={form.instagramUrl}
+                        onChange={(event) => updateField("instagramUrl", event.target.value)}
+                        placeholder="Usuário"
+                      />
+                      <span
+                        style={{
+                          color: "#64748b",
+                          fontSize: "12px",
+                          lineHeight: 1.4,
+                          fontWeight: 700,
+                        }}
+                      >
+                        Informe apenas o usuário. Pode colar com @ ou link que o sistema
+                        limpa automaticamente.
+                      </span>
+                    </label>
+                  </div>
+
+                  <label style={{ ...labelStyle, marginTop: "16px" }}>
+                    Especialidades
+                    <textarea
+                      style={textareaStyle}
+                      value={form.specialties}
+                      onChange={(event) => updateField("specialties", event.target.value)}
+                      placeholder="Ansiedade, depressão, autoestima, orientação parental..."
+                    />
+                  </label>
+
+                  <label style={{ ...labelStyle, marginTop: "16px" }}>
+                    Formação
+                    <textarea
+                      style={textareaStyle}
+                      value={form.education}
+                      onChange={(event) => updateField("education", event.target.value)}
+                      placeholder="Descreva sua formação, pós-graduação, cursos e experiências relevantes."
+                    />
+                  </label>
+                </section>
+              ) : null}
+
+              {isPatient ? (
+                <section style={cardStyle}>
+                  <h2 style={sectionTitleStyle}>Informações complementares</h2>
+                  <p style={sectionDescriptionStyle}>
+                    Dados que podem auxiliar o psicólogo a compreender preferências e
+                    necessidades de contato.
+                  </p>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: "16px",
+                    }}
+                  >
+                    <label style={labelStyle}>
+                      Nome social
+                      <input
+                        style={inputStyle}
+                        value={form.socialName}
+                        onChange={(event) => updateField("socialName", event.target.value)}
+                        placeholder="Opcional"
+                      />
+                    </label>
+
+                    <label style={labelStyle}>
+                      Data de nascimento
+                      <input
+                        type="date"
+                        style={inputStyle}
+                        value={form.birthDate}
+                        onChange={(event) => updateField("birthDate", event.target.value)}
+                      />
+                    </label>
+
+                    <label style={labelStyle}>
+                      Preferência de contato
+                      <input
+                        style={inputStyle}
+                        value={form.contactPreference}
+                        onChange={(event) =>
+                          updateField("contactPreference", event.target.value)
+                        }
+                        placeholder="Mensagem pela plataforma, e-mail..."
+                      />
+                    </label>
+
+                    <label style={labelStyle}>
+                      Contato de emergência
+                      <input
+                        style={inputStyle}
+                        value={form.emergencyContactName}
+                        onChange={(event) =>
+                          updateField("emergencyContactName", event.target.value)
+                        }
+                        placeholder="Nome do contato"
+                      />
+                    </label>
+
+                    <label style={labelStyle}>
+                      Telefone de emergência
+                      <input
+                        style={inputStyle}
+                        value={form.emergencyContactPhone}
+                        onChange={(event) =>
+                          updateField("emergencyContactPhone", event.target.value)
+                        }
+                        placeholder="(83) 99999-9999"
+                        inputMode="numeric"
+                        autoComplete="tel"
+                      />
+                    </label>
+                  </div>
+
+                  <label style={{ ...labelStyle, marginTop: "16px" }}>
+                    Observações para o psicólogo
+                    <textarea
+                      style={textareaStyle}
+                      value={form.patientNotes}
+                      onChange={(event) => updateField("patientNotes", event.target.value)}
+                      placeholder="Informações importantes que você deseja compartilhar com o profissional."
+                    />
+                  </label>
+                </section>
+              ) : null}
+            </section>
+          </div>
+        </form>
+      )}
     </main>
   );
 }
