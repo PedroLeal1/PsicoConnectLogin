@@ -81,7 +81,6 @@ export const authConfig: NextAuthOptions = {
         });
 
         if (!user) {
-          // Mantém e-mail inexistente e senha errada com a mesma mensagem por segurança.
           throw new Error("INVALID_CREDENTIALS");
         }
 
@@ -129,7 +128,16 @@ export const authConfig: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, trigger, session }) {
+      if (trigger === "update" && (session as any)?.disconnectGoogle) {
+        delete (token as any).googleAccessToken;
+        delete (token as any).googleRefreshToken;
+        delete (token as any).googleAccessTokenExpires;
+        delete (token as any).error;
+
+        return token;
+      }
+
       if (user?.email) {
         const dbUser = await prisma.user.findUnique({
           where: { email: user.email },

@@ -47,13 +47,86 @@ type Feedback = {
   message: string;
 };
 
+const pageStyle = {
+  padding: "36px",
+  paddingBottom: "120px",
+  minHeight: "calc(100vh - 48px)",
+  background:
+    "radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 32%), #f8fafc",
+  borderRadius: "32px",
+  overflow: "visible",
+} as const;
+
+const cardStyle = {
+  backgroundColor: "rgba(255, 255, 255, 0.94)",
+  borderRadius: "22px",
+  padding: "24px",
+  boxShadow: "0 16px 40px rgba(15, 23, 42, 0.08)",
+  border: "1px solid rgba(226, 232, 240, 0.9)",
+} as const;
+
+const inputStyle = {
+  width: "100%",
+  border: "1px solid #d1d5db",
+  borderRadius: "12px",
+  padding: "12px 14px",
+  fontSize: "14px",
+  outline: "none",
+  backgroundColor: "#fff",
+} as const;
+
+const buttonPrimaryStyle = {
+  background: "linear-gradient(135deg, #2563eb, #4f8cff)",
+  color: "#fff",
+  border: "none",
+  borderRadius: "14px",
+  padding: "12px 18px",
+  fontWeight: 900,
+  cursor: "pointer",
+  fontSize: "14px",
+  textDecoration: "none",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "8px",
+  boxShadow: "0 10px 24px rgba(37, 99, 235, 0.24)",
+} as const;
+
+const buttonSecondaryStyle = {
+  backgroundColor: "#eff6ff",
+  color: "#1d4ed8",
+  border: "1px solid #bfdbfe",
+  borderRadius: "14px",
+  padding: "12px 18px",
+  fontWeight: 900,
+  cursor: "pointer",
+  fontSize: "14px",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "8px",
+} as const;
+
+const dangerButtonStyle = {
+  backgroundColor: "#fef2f2",
+  color: "#b91c1c",
+  border: "1px solid #fecaca",
+  borderRadius: "12px",
+  padding: "10px 14px",
+  fontWeight: 800,
+  cursor: "pointer",
+  fontSize: "14px",
+} as const;
+
 export default function AgendaPage() {
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const { data: session, status, update } = useSession();
   const searchParams = useSearchParams();
   const patientIdFromUrl = searchParams.get("patientId");
 
   const googleConnected = Boolean((session?.user as any)?.googleAccessToken);
+  const userRole = (session?.user as any)?.role;
+  const isPsychologist = userRole === "PSYCHOLOGIST";
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
@@ -86,20 +159,54 @@ export default function AgendaPage() {
   const [expandedPaymentId, setExpandedPaymentId] = useState("");
 
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [disconnectingGoogle, setDisconnectingGoogle] = useState(false);
   const [formError, setFormError] = useState("");
-
   const [handledPatientFromUrl, setHandledPatientFromUrl] = useState(false);
 
   const [appointmentToCancel, setAppointmentToCancel] = useState<{
     id: string;
     title: string;
   } | null>(null);
-
   const [cancellationReason, setCancellationReason] = useState("");
 
+  const statusInfo = {
+    SCHEDULED: {
+      label: "Agendadas",
+      cardTitle: "Consultas agendadas",
+      sectionTitle: "Próximos horários",
+      emptyTitle: "Nenhuma consulta agendada",
+      emptyDescription:
+        "Quando houver consultas futuras cadastradas no sistema, elas aparecerão aqui. Para criar novas consultas sincronizadas, conecte o Google Calendar.",
+    },
+    CANCELLED: {
+      label: "Canceladas",
+      cardTitle: "Consultas canceladas",
+      sectionTitle: "Consultas canceladas",
+      emptyTitle: "Nenhuma consulta cancelada",
+      emptyDescription:
+        "As consultas canceladas aparecerão aqui para acompanhamento do histórico.",
+    },
+    ALL: {
+      label: "Todas",
+      cardTitle: "Consultas encontradas",
+      sectionTitle: "Histórico de consultas",
+      emptyTitle: "Nenhuma consulta encontrada",
+      emptyDescription:
+        "Quando houver consultas cadastradas no sistema, elas aparecerão aqui, mesmo que não tenham sido criadas pelo Google Calendar.",
+    },
+  };
+
+  const currentStatusInfo = statusInfo[appointmentStatusFilter];
+
   async function loadEvents() {
-    if (!googleConnected) {
+    if (status !== "authenticated") {
       setEvents([]);
+      return;
+    }
+
+    if (!isPsychologist) {
+      setEvents([]);
+      setEventsError("A agenda é exclusiva para psicólogos.");
       return;
     }
 
@@ -117,6 +224,16 @@ export default function AgendaPage() {
       const data = await response.json();
 
       if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error(
+            "Sua sessão não está autorizada ou expirou. Saia da conta e entre novamente.",
+          );
+        }
+
+        if (response.status === 403) {
+          throw new Error("Apenas psicólogos podem acessar a agenda.");
+        }
+
         throw new Error(data?.error || "Erro ao carregar consultas.");
       }
 
@@ -129,6 +246,11 @@ export default function AgendaPage() {
   }
 
   async function loadPatients() {
+    if (status !== "authenticated" || !isPsychologist) {
+      setPatients([]);
+      return;
+    }
+
     try {
       setLoadingPatients(true);
 
@@ -139,6 +261,12 @@ export default function AgendaPage() {
       const data = await response.json();
 
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          throw new Error(
+            "Não foi possível carregar seus pacientes. Verifique se você entrou como psicólogo.",
+          );
+        }
+
         throw new Error(data?.error || "Erro ao carregar pacientes.");
       }
 
@@ -152,11 +280,17 @@ export default function AgendaPage() {
 
   useEffect(() => {
     loadEvents();
-  }, [googleConnected, appointmentStatusFilter]);
+  }, [status, isPsychologist, googleConnected, appointmentStatusFilter]);
 
   useEffect(() => {
     loadPatients();
-  }, []);
+  }, [status, isPsychologist]);
+
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.replace("/login");
+    }
+  }, [router, status]);
 
   useEffect(() => {
     if (!patientIdFromUrl || handledPatientFromUrl || patients.length === 0) {
@@ -177,46 +311,37 @@ export default function AgendaPage() {
     }
 
     setSelectedPatientId(patientIdFromUrl);
-    setIsModalOpen(true);
+
+    if (googleConnected) {
+      setIsModalOpen(true);
+    } else {
+      showFeedback(
+        "info",
+        "Paciente selecionado. Conecte o Google Calendar para criar um horário sincronizado.",
+      );
+    }
+
     setHandledPatientFromUrl(true);
-  }, [patientIdFromUrl, handledPatientFromUrl, patients]);
+  }, [patientIdFromUrl, handledPatientFromUrl, patients, googleConnected]);
 
   const nextEvent = useMemo(() => {
-    const scheduledEvents = events.filter(
-      (event) => event.status !== "CANCELLED",
-    );
+    const scheduledEvents = events
+      .filter((event) => event.status !== "CANCELLED" && event.start)
+      .sort(
+        (a, b) =>
+          new Date(a.start || "").getTime() -
+          new Date(b.start || "").getTime(),
+      );
 
     return scheduledEvents.length > 0 ? scheduledEvents[0] : null;
   }, [events]);
 
-  const statusInfo = {
-    SCHEDULED: {
-      label: "Agendadas",
-      cardTitle: "Consultas agendadas",
-      sectionTitle: "Próximos horários",
-      emptyTitle: "Nenhuma consulta agendada",
-      emptyDescription:
-        "Quando houver consultas futuras cadastradas, elas aparecerão aqui.",
-    },
-    CANCELLED: {
-      label: "Canceladas",
-      cardTitle: "Consultas canceladas",
-      sectionTitle: "Consultas canceladas",
-      emptyTitle: "Nenhuma consulta cancelada",
-      emptyDescription:
-        "As consultas canceladas aparecerão aqui para acompanhamento do histórico.",
-    },
-    ALL: {
-      label: "Todas",
-      cardTitle: "Consultas encontradas",
-      sectionTitle: "Histórico de consultas",
-      emptyTitle: "Nenhuma consulta encontrada",
-      emptyDescription:
-        "Quando houver consultas cadastradas no sistema, elas aparecerão aqui.",
-    },
-  };
+  const googleSyncedEvents = useMemo(
+    () => events.filter((event) => event.googleEventId || event.htmlLink).length,
+    [events],
+  );
 
-  const currentStatusInfo = statusInfo[appointmentStatusFilter];
+  const systemOnlyEvents = events.length - googleSyncedEvents;
 
   function formatDate(dateString: string | null | undefined) {
     if (!dateString) return "--";
@@ -236,6 +361,10 @@ export default function AgendaPage() {
       style: "currency",
       currency: "BRL",
     }).format(value);
+  }
+
+  function getAppointmentId(event: CalendarEvent) {
+    return event.appointmentId || event.id;
   }
 
   function getPaymentLabel(status: CalendarEvent["paymentStatus"]) {
@@ -269,12 +398,10 @@ export default function AgendaPage() {
   }
 
   function getPaymentDraftAmount(event: CalendarEvent) {
-    const appointmentId = event.appointmentId || event.id;
+    const appointmentId = getAppointmentId(event);
     const typedAmount = paymentAmounts[appointmentId];
 
-    if (typedAmount !== undefined) {
-      return typedAmount;
-    }
+    if (typedAmount !== undefined) return typedAmount;
 
     return event.paymentAmount !== null && event.paymentAmount !== undefined
       ? String(event.paymentAmount).replace(".", ",")
@@ -282,20 +409,16 @@ export default function AgendaPage() {
   }
 
   function getPaymentDraftNote(event: CalendarEvent) {
-    const appointmentId = event.appointmentId || event.id;
+    const appointmentId = getAppointmentId(event);
     const typedNote = paymentNotes[appointmentId];
 
-    if (typedNote !== undefined) {
-      return typedNote;
-    }
+    if (typedNote !== undefined) return typedNote;
 
     return event.paymentNote || "";
   }
 
   function getConfirmationLabel(event: CalendarEvent) {
-    if (event.status === "CANCELLED") {
-      return "Consulta cancelada";
-    }
+    if (event.status === "CANCELLED") return "Consulta cancelada";
 
     if (
       event.confirmationStatus === "CANCELLATION_REQUESTED" &&
@@ -304,10 +427,7 @@ export default function AgendaPage() {
       return "Cancelamento solicitado";
     }
 
-    if (event.confirmationStatus === "CONFIRMED") {
-      return "Presença confirmada";
-    }
-
+    if (event.confirmationStatus === "CONFIRMED") return "Presença confirmada";
     if (event.cancellationRequestStatus === "REJECTED") {
       return "Solicitação rejeitada";
     }
@@ -393,8 +513,8 @@ export default function AgendaPage() {
   function handleOpenModal() {
     if (!googleConnected) {
       showFeedback(
-        "error",
-        "Conecte o Google Calendar antes de criar uma consulta.",
+        "info",
+        "As consultas já cadastradas aparecem normalmente. Para criar um novo horário sincronizado, conecte o Google Calendar.",
       );
       return;
     }
@@ -402,9 +522,28 @@ export default function AgendaPage() {
     setIsModalOpen(true);
   }
 
+
+  async function handleDisconnectGoogle() {
+    try {
+      setDisconnectingGoogle(true);
+
+      await update({
+        disconnectGoogle: true,
+      });
+
+      showFeedback("success", "Google Calendar desconectado desta sessão.");
+    } catch {
+      showFeedback(
+        "error",
+        "Não foi possível desconectar o Google Calendar. Tente sair e entrar novamente.",
+      );
+    } finally {
+      setDisconnectingGoogle(false);
+    }
+  }
+
   async function handleSubmitAppointment(e: React.FormEvent) {
     e.preventDefault();
-
     setFormError("");
 
     if (!googleConnected) {
@@ -494,7 +633,6 @@ export default function AgendaPage() {
     }
 
     setCancellationReason("");
-
     setAppointmentToCancel({
       id: appointmentId,
       title: title || "Consulta",
@@ -595,7 +733,7 @@ export default function AgendaPage() {
   }
 
   function canSendReminder(event: CalendarEvent) {
-    if (!event.appointmentId && !event.id) return false;
+    if (!getAppointmentId(event)) return false;
     if (event.status === "CANCELLED") return false;
     if (!event.start) return false;
 
@@ -644,7 +782,7 @@ export default function AgendaPage() {
     event: CalendarEvent,
     paymentStatus: PaymentStatus,
   ) {
-    const appointmentId = event.appointmentId || event.id;
+    const appointmentId = getAppointmentId(event);
 
     if (!appointmentId) {
       showFeedback("error", "Consulta inválida.");
@@ -694,76 +832,120 @@ export default function AgendaPage() {
     }
   }
 
-  const pageStyle = {
-    padding: "36px",
-    minHeight: "calc(100vh - 48px)",
-    background:
-      "radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 32%), #f8fafc",
-    borderRadius: "32px",
-    overflow: "visible",
-  };
-
-  const cardStyle = {
-    backgroundColor: "rgba(255, 255, 255, 0.94)",
-    borderRadius: "22px",
-    padding: "24px",
-    boxShadow: "0 16px 40px rgba(15, 23, 42, 0.08)",
-    border: "1px solid rgba(226, 232, 240, 0.9)",
-  };
-
-  const infoCardStyle = {
-    ...cardStyle,
-    minHeight: "150px",
-    position: "relative",
-    overflow: "hidden",
-  } as const;
-
-  const buttonPrimaryStyle = {
-    background: "linear-gradient(135deg, #2563eb, #4f8cff)",
-    color: "#fff",
-    border: "none",
-    borderRadius: "14px",
-    padding: "12px 18px",
-    fontWeight: 900,
-    cursor: "pointer",
-    fontSize: "14px",
-    textDecoration: "none",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    boxShadow: "0 10px 24px rgba(37, 99, 235, 0.24)",
-  } as const;
-
-  const buttonSecondaryStyle = {
-    backgroundColor: "#eff6ff",
-    color: "#1d4ed8",
-    border: "1px solid #bfdbfe",
-    borderRadius: "14px",
-    padding: "12px 18px",
-    fontWeight: 900,
-    cursor: "pointer",
-    fontSize: "14px",
-    width: "100%",
-  } as const;
-
-  const buttonSuccessStyle = {
-    backgroundColor: "#ecfdf5",
-    color: "#065f46",
-    border: "1px solid #a7f3d0",
-    borderRadius: "14px",
-    padding: "12px 18px",
-    fontWeight: 900,
-    fontSize: "14px",
-    width: "100%",
-    textAlign: "center",
-  } as const;
+  function renderBadge(
+    label: string,
+    style: Record<string, string | number>,
+    icon?: string,
+  ) {
+    return (
+      <span
+        style={{
+          ...style,
+          borderRadius: "999px",
+          padding: "5px 10px",
+          fontSize: "12px",
+          fontWeight: 900,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "6px",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {icon && <i className={icon}></i>}
+        {label}
+      </span>
+    );
+  }
 
   if (status === "loading") {
     return (
+      <div
+        style={{
+          minHeight: "calc(100vh - 48px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: "32px",
+          background: "#f8fbff",
+        }}
+      >
+        <div className="psico-simple-loader">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "unauthenticated") {
+    return (
       <div style={pageStyle}>
-        <h1 style={{ fontSize: "32px", fontWeight: 900, color: "#0f172a" }}>
-          Carregando agenda...
-        </h1>
+        <section style={cardStyle}>
+          <h1
+            style={{
+              fontSize: "32px",
+              fontWeight: 900,
+              color: "#0f172a",
+              marginBottom: "8px",
+            }}
+          >
+            Redirecionando para o login...
+          </h1>
+          <p style={{ color: "#64748b", margin: 0 }}>
+            Entre novamente para acessar sua agenda.
+          </p>
+        </section>
+      </div>
+    );
+  }
+
+  if (!isPsychologist) {
+    return (
+      <div style={pageStyle}>
+        <section
+          style={{
+            ...cardStyle,
+            display: "flex",
+            gap: "18px",
+            alignItems: "flex-start",
+          }}
+        >
+          <div
+            style={{
+              width: "52px",
+              height: "52px",
+              borderRadius: "16px",
+              backgroundColor: "#eff6ff",
+              color: "#1d4ed8",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "22px",
+              flexShrink: 0,
+            }}
+          >
+            <i className="fa-solid fa-lock"></i>
+          </div>
+
+          <div>
+            <h1
+              style={{
+                fontSize: "32px",
+                fontWeight: 900,
+                color: "#0f172a",
+                marginBottom: "8px",
+              }}
+            >
+              Agenda exclusiva para psicólogos
+            </h1>
+            <p style={{ color: "#64748b", lineHeight: 1.6, margin: 0 }}>
+              Esta tela é destinada ao gerenciamento de consultas pelo
+              psicólogo. Entre com uma conta de psicólogo para acessar a agenda
+              e criar novos horários.
+            </p>
+          </div>
+        </section>
       </div>
     );
   }
@@ -795,7 +977,6 @@ export default function AgendaPage() {
               backgroundColor: "rgba(255, 255, 255, 0.16)",
             }}
           />
-
           <div
             style={{
               position: "absolute",
@@ -816,9 +997,10 @@ export default function AgendaPage() {
               alignItems: "flex-start",
               position: "relative",
               zIndex: 1,
+              flexWrap: "wrap",
             }}
           >
-            <div>
+            <div style={{ flex: 1, minWidth: "300px" }}>
               <span
                 style={{
                   display: "inline-flex",
@@ -829,7 +1011,7 @@ export default function AgendaPage() {
                   borderRadius: "999px",
                   padding: "7px 12px",
                   fontSize: "13px",
-                  fontWeight: 800,
+                  fontWeight: 900,
                   marginBottom: "14px",
                 }}
               >
@@ -852,13 +1034,14 @@ export default function AgendaPage() {
                 style={{
                   fontSize: "18px",
                   color: "#dbeafe",
-                  maxWidth: "780px",
+                  maxWidth: "820px",
                   margin: 0,
+                  lineHeight: 1.55,
                 }}
               >
                 Organize atendimentos, acompanhe horários, notifique pacientes
                 por e-mail e mantenha sua agenda sincronizada com o Google
-                Calendar.
+                Calendar quando necessário.
               </p>
             </div>
 
@@ -869,13 +1052,11 @@ export default function AgendaPage() {
                 background: "#ffffff",
                 color: "#1d4ed8",
                 boxShadow: "0 10px 24px rgba(15, 23, 42, 0.16)",
-                opacity: googleConnected ? 1 : 0.7,
-                cursor: googleConnected ? "pointer" : "not-allowed",
               }}
-              disabled={!googleConnected}
               onClick={handleOpenModal}
             >
-              Novo horário
+              <i className="fa-solid fa-plus"></i>
+              {googleConnected ? "Novo horário" : "Conectar para criar"}
             </button>
           </div>
         </section>
@@ -919,130 +1100,102 @@ export default function AgendaPage() {
             marginBottom: "28px",
           }}
         >
-          <div style={infoCardStyle}>
-            <div
-              style={{
-                position: "absolute",
-                right: "-24px",
-                top: "-24px",
-                width: "94px",
-                height: "94px",
-                borderRadius: "999px",
-                backgroundColor: "#eff6ff",
-              }}
-            />
-            <div
-              style={{
-                fontSize: "18px",
-                fontWeight: 900,
-                color: "#0f172a",
-                marginBottom: "12px",
-              }}
-            >
-              {currentStatusInfo.cardTitle}
-            </div>
-
-            <div
-              style={{
-                fontSize: "34px",
-                fontWeight: 900,
-                color: "#0f172a",
-                marginBottom: "8px",
-              }}
-            >
-              {events.length}
-            </div>
-
-            <div style={{ color: "#6b7280", fontSize: "14px" }}>
-              {appointmentStatusFilter === "SCHEDULED"
-                ? "Total de consultas futuras agendadas."
-                : appointmentStatusFilter === "CANCELLED"
-                  ? "Total de consultas canceladas no histórico."
-                  : "Total de consultas exibidas no filtro atual."}
-            </div>
-          </div>
-
-          <div style={infoCardStyle}>
-            <div
-              style={{
-                position: "absolute",
-                right: "-24px",
-                top: "-24px",
-                width: "94px",
-                height: "94px",
-                borderRadius: "999px",
-                backgroundColor: "#ecfdf5",
-              }}
-            />
-            <div
-              style={{
-                fontSize: "18px",
-                fontWeight: 900,
-                color: "#0f172a",
-                marginBottom: "12px",
-              }}
-            >
-              Próxima consulta
-            </div>
-
-            <div
-              style={{
-                fontSize: "24px",
-                fontWeight: 900,
-                color: "#0f172a",
-                marginBottom: "8px",
-              }}
-            >
-              {nextEvent ? formatDate(nextEvent.start) : "--"}
-            </div>
-
-            <div style={{ color: "#6b7280", fontSize: "14px" }}>
-              {nextEvent
+          {[
+            {
+              title: currentStatusInfo.cardTitle,
+              value: events.length,
+              description:
+                appointmentStatusFilter === "SCHEDULED"
+                  ? "Total de consultas futuras agendadas."
+                  : appointmentStatusFilter === "CANCELLED"
+                    ? "Total de consultas canceladas no histórico."
+                    : "Total de consultas exibidas no filtro atual.",
+              icon: "fa-solid fa-calendar-check",
+              color: "#eff6ff",
+            },
+            {
+              title: "Próxima consulta",
+              value: nextEvent ? formatDate(nextEvent.start) : "--",
+              description: nextEvent
                 ? nextEvent.title
-                : "A próxima consulta aparecerá aqui quando houver agendamentos."}
-            </div>
-          </div>
-
-          <div style={infoCardStyle}>
+                : "A próxima consulta aparecerá aqui quando houver agendamentos.",
+              icon: "fa-solid fa-clock",
+              color: "#ecfdf5",
+            },
+            {
+              title: "Google Calendar",
+              value: googleConnected ? "Conectado" : "Não conectado",
+              description: googleConnected
+                ? "Novos horários podem ser sincronizados com o Google."
+                : "A conexão é necessária apenas para criar eventos no Google.",
+              icon: "fa-brands fa-google",
+              color: "#f5f3ff",
+            },
+          ].map((item) => (
             <div
+              key={item.title}
               style={{
-                position: "absolute",
-                right: "-24px",
-                top: "-24px",
-                width: "94px",
-                height: "94px",
-                borderRadius: "999px",
-                backgroundColor: "#f5f3ff",
-              }}
-            />
-            <div
-              style={{
-                fontSize: "18px",
-                fontWeight: 900,
-                color: "#0f172a",
-                marginBottom: "12px",
-              }}
-            >
-              Google Calendar
-            </div>
-
-            <div
-              style={{
-                fontSize: "24px",
-                fontWeight: 800,
-                color: googleConnected ? "#065f46" : "#111827",
-                marginBottom: "8px",
+                ...cardStyle,
+                minHeight: "150px",
+                position: "relative",
+                overflow: "hidden",
               }}
             >
-              {googleConnected ? "Conectado" : "Não conectado"}
+              <div
+                style={{
+                  position: "absolute",
+                  right: "-24px",
+                  top: "-24px",
+                  width: "94px",
+                  height: "94px",
+                  borderRadius: "999px",
+                  backgroundColor: item.color,
+                }}
+              />
+              <div
+                style={{
+                  width: "42px",
+                  height: "42px",
+                  borderRadius: "14px",
+                  backgroundColor: item.color,
+                  color: "#1d4ed8",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "18px",
+                  marginBottom: "14px",
+                }}
+              >
+                <i className={item.icon}></i>
+              </div>
+              <div
+                style={{
+                  fontSize: "16px",
+                  fontWeight: 900,
+                  color: "#0f172a",
+                  marginBottom: "10px",
+                }}
+              >
+                {item.title}
+              </div>
+              <div
+                style={{
+                  fontSize: typeof item.value === "number" ? "34px" : "22px",
+                  fontWeight: 900,
+                  color:
+                    item.title === "Google Calendar" && googleConnected
+                      ? "#065f46"
+                      : "#0f172a",
+                  marginBottom: "8px",
+                }}
+              >
+                {item.value}
+              </div>
+              <div style={{ color: "#6b7280", fontSize: "14px", lineHeight: 1.45 }}>
+                {item.description}
+              </div>
             </div>
-
-            <div style={{ color: "#6b7280", fontSize: "14px" }}>
-              {googleConnected
-                ? "Sua conta Google está vinculada."
-                : "Conecte sua agenda para sincronizar os atendimentos."}
-            </div>
-          </div>
+          ))}
         </div>
 
         <div
@@ -1060,24 +1213,38 @@ export default function AgendaPage() {
                 alignItems: "flex-start",
                 marginBottom: "18px",
                 gap: "16px",
+                flexWrap: "wrap",
               }}
             >
               <div>
                 <h2
                   style={{
                     fontSize: "28px",
-                    fontWeight: 700,
+                    fontWeight: 900,
                     color: "#111827",
                     marginBottom: "6px",
                   }}
                 >
                   {currentStatusInfo.sectionTitle}
                 </h2>
-
                 <p style={{ color: "#6b7280", margin: 0 }}>
                   Acompanhe suas consultas e mantenha o histórico organizado.
                 </p>
               </div>
+
+              <button
+                type="button"
+                onClick={loadEvents}
+                disabled={loadingEvents}
+                style={{
+                  ...buttonSecondaryStyle,
+                  opacity: loadingEvents ? 0.7 : 1,
+                  cursor: loadingEvents ? "not-allowed" : "pointer",
+                }}
+              >
+                <i className="fa-solid fa-rotate"></i>
+                {loadingEvents ? "Atualizando..." : "Atualizar"}
+              </button>
             </div>
 
             <div
@@ -1107,13 +1274,9 @@ export default function AgendaPage() {
                         ? "1px solid #2563eb"
                         : "1px solid #d1d5db",
                     backgroundColor:
-                      appointmentStatusFilter === filter.value
-                        ? "#eff6ff"
-                        : "#fff",
+                      appointmentStatusFilter === filter.value ? "#eff6ff" : "#fff",
                     color:
-                      appointmentStatusFilter === filter.value
-                        ? "#1d4ed8"
-                        : "#374151",
+                      appointmentStatusFilter === filter.value ? "#1d4ed8" : "#374151",
                     borderRadius: "999px",
                     padding: "10px 16px",
                     fontWeight: 900,
@@ -1127,422 +1290,367 @@ export default function AgendaPage() {
             </div>
 
             {loadingEvents ? (
-              <div
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "14px",
-                  padding: "18px",
-                  backgroundColor: "#f8fafc",
-                }}
-              >
-                <p style={{ margin: 0, color: "#6b7280" }}>
-                  Carregando consultas...
-                </p>
-              </div>
+              <EmptyState
+                icon="fa-solid fa-spinner"
+                title="Carregando consultas..."
+                description="Buscando os agendamentos salvos no sistema."
+              />
             ) : eventsError ? (
               <div
                 style={{
                   border: "1px solid #fecaca",
-                  borderRadius: "14px",
+                  borderRadius: "16px",
                   padding: "18px",
                   backgroundColor: "#fef2f2",
+                  color: "#b91c1c",
+                  fontWeight: 800,
+                  lineHeight: 1.5,
                 }}
               >
-                <p style={{ margin: 0, color: "#b91c1c", fontWeight: 700 }}>
-                  {eventsError}
-                </p>
+                {eventsError}
               </div>
             ) : events.length === 0 ? (
-              <div
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: "14px",
-                  padding: "18px",
-                  backgroundColor: "#f8fafc",
-                }}
-              >
-                <p
-                  style={{
-                    fontWeight: 700,
-                    color: "#111827",
-                    marginBottom: "6px",
-                  }}
-                >
-                  {currentStatusInfo.emptyTitle}
-                </p>
-
-                <p style={{ color: "#6b7280", margin: 0 }}>
-                  {currentStatusInfo.emptyDescription}
-                </p>
-              </div>
+              <EmptyState
+                icon="fa-solid fa-calendar-xmark"
+                title={currentStatusInfo.emptyTitle}
+                description={currentStatusInfo.emptyDescription}
+              />
             ) : (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "14px",
-                }}
-              >
-                {events.map((event) => (
-                  <div
-                    key={event.id}
-                    style={{
-                      border: "1px solid #e5e7eb",
-                      borderRadius: "18px",
-                      padding: "18px",
-                      backgroundColor:
-                        event.status === "CANCELLED" ? "#fff7f7" : "#f8fafc",
-                    }}
-                  >
-                    <div
+              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                {events.map((event) => {
+                  const appointmentId = getAppointmentId(event);
+                  const isGoogleSynced = Boolean(event.googleEventId || event.htmlLink);
+                  const isCancelled = event.status === "CANCELLED";
+                  const isExpandedPayment = expandedPaymentId === appointmentId;
+
+                  return (
+                    <article
+                      key={event.id}
                       style={{
-                        fontSize: "18px",
-                        fontWeight: 700,
-                        color: "#111827",
-                        marginBottom: "8px",
+                        border: isCancelled ? "1px solid #fecaca" : "1px solid #e5e7eb",
+                        borderRadius: "18px",
+                        padding: "18px",
+                        backgroundColor: isCancelled ? "#fff7f7" : "#f8fafc",
                       }}
                     >
-                      {event.title}
-                    </div>
-
-                    <div
-                      style={{
-                        display: "inline-block",
-                        backgroundColor:
-                          event.status === "CANCELLED" ? "#fef2f2" : "#ecfdf5",
-                        color:
-                          event.status === "CANCELLED" ? "#b91c1c" : "#065f46",
-                        border:
-                          event.status === "CANCELLED"
-                            ? "1px solid #fecaca"
-                            : "1px solid #a7f3d0",
-                        borderRadius: "999px",
-                        padding: "4px 10px",
-                        fontSize: "12px",
-                        fontWeight: 800,
-                        marginBottom: "10px",
-                      }}
-                    >
-                      {event.status === "CANCELLED" ? "Cancelada" : "Agendada"}
-                    </div>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: "8px",
-                        flexWrap: "wrap",
-                        marginBottom: "10px",
-                      }}
-                    >
-                      <span
-                        style={{
-                          ...getConfirmationStyle(event),
-                          borderRadius: "999px",
-                          padding: "4px 10px",
-                          fontSize: "12px",
-                          fontWeight: 800,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "6px",
-                        }}
-                      >
-                        <i
-                          className={
-                            isCancellationRequestPending(event)
-                              ? "fa-solid fa-clock"
-                              : event.confirmationStatus === "CONFIRMED"
-                                ? "fa-solid fa-circle-check"
-                                : "fa-solid fa-circle-info"
-                          }
-                        ></i>
-                        {getConfirmationLabel(event)}
-                      </span>
-                    </div>
-
-                    {event.patientName && (
-                      <div style={{ color: "#4b5563", marginBottom: "6px" }}>
-                        <strong>Paciente:</strong> {event.patientName}
-                        {event.patientEmail ? ` — ${event.patientEmail}` : ""}
-                      </div>
-                    )}
-
-                    <div style={{ color: "#4b5563", marginBottom: "6px" }}>
-                      <strong>Início:</strong> {formatDate(event.start)}
-                    </div>
-
-                    {event.end && (
-                      <div style={{ color: "#4b5563", marginBottom: "6px" }}>
-                        <strong>Fim:</strong> {formatDate(event.end)}
-                      </div>
-                    )}
-
-                    {event.location && (
-                      <div style={{ color: "#4b5563", marginBottom: "6px" }}>
-                        <strong>Local:</strong> {event.location}
-                      </div>
-                    )}
-
-                    {event.description && (
-                      <div style={{ color: "#4b5563", marginBottom: "10px" }}>
-                        <strong>Descrição:</strong> {event.description}
-                      </div>
-                    )}
-
-                    {event.status === "CANCELLED" && event.cancelledAt && (
-                      <div style={{ color: "#4b5563", marginBottom: "6px" }}>
-                        <strong>Cancelada em:</strong>{" "}
-                        {formatDate(event.cancelledAt)}
-                      </div>
-                    )}
-
-                    {event.status === "CANCELLED" &&
-                      event.cancellationReason && (
-                        <div style={{ color: "#4b5563", marginBottom: "10px" }}>
-                          <strong>Motivo do cancelamento:</strong>{" "}
-                          {event.cancellationReason}
-                        </div>
-                      )}
-
-                    {isCancellationRequestPending(event) && (
                       <div
                         style={{
-                          backgroundColor: "#fffbeb",
-                          border: "1px solid #fde68a",
-                          borderRadius: "16px",
-                          padding: "14px",
-                          marginTop: "12px",
-                          marginBottom: "12px",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: "14px",
+                          flexWrap: "wrap",
+                          marginBottom: "10px",
                         }}
                       >
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            color: "#92400e",
-                            fontWeight: 900,
-                            marginBottom: "8px",
-                          }}
-                        >
-                          <i className="fa-solid fa-triangle-exclamation"></i>
-                          Solicitação de cancelamento pendente
-                        </div>
-
-                        <p
-                          style={{
-                            color: "#78350f",
-                            lineHeight: 1.5,
-                            marginBottom: "10px",
-                          }}
-                        >
-                          O paciente solicitou o cancelamento desta consulta.
-                          Analise o motivo antes de aprovar ou rejeitar.
-                        </p>
-
-                        {event.cancellationRequestedAt && (
-                          <p
+                        <div style={{ minWidth: 0 }}>
+                          <h3
                             style={{
-                              color: "#78350f",
-                              fontSize: "13px",
+                              fontSize: "19px",
+                              fontWeight: 900,
+                              color: "#111827",
                               marginBottom: "8px",
                             }}
                           >
-                            <strong>Solicitada em:</strong>{" "}
-                            {formatDate(event.cancellationRequestedAt)}
-                          </p>
-                        )}
+                            {event.title || "Consulta"}
+                          </h3>
 
-                        {event.cancellationRequestReason && (
-                          <div
-                            style={{
-                              backgroundColor: "#ffffff",
-                              border: "1px solid #fde68a",
-                              borderRadius: "12px",
-                              padding: "12px",
-                              color: "#4b5563",
-                              marginBottom: "12px",
-                              lineHeight: 1.5,
-                            }}
-                          >
-                            <strong>Motivo informado:</strong>{" "}
-                            {event.cancellationRequestReason}
+                          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                            {renderBadge(
+                              isCancelled ? "Cancelada" : "Agendada",
+                              isCancelled
+                                ? {
+                                    backgroundColor: "#fef2f2",
+                                    color: "#b91c1c",
+                                    border: "1px solid #fecaca",
+                                  }
+                                : {
+                                    backgroundColor: "#ecfdf5",
+                                    color: "#065f46",
+                                    border: "1px solid #a7f3d0",
+                                  },
+                              isCancelled
+                                ? "fa-solid fa-circle-xmark"
+                                : "fa-solid fa-circle-check",
+                            )}
+
+                            {renderBadge(
+                              isGoogleSynced
+                                ? "Sistema + Google Calendar"
+                                : "Somente no sistema",
+                              isGoogleSynced
+                                ? {
+                                    backgroundColor: "#eef2ff",
+                                    color: "#3730a3",
+                                    border: "1px solid #c7d2fe",
+                                  }
+                                : {
+                                    backgroundColor: "#ffffff",
+                                    color: "#475569",
+                                    border: "1px solid #e2e8f0",
+                                  },
+                              isGoogleSynced ? "fa-brands fa-google" : "fa-solid fa-database",
+                            )}
+
+                            {renderBadge(
+                              getConfirmationLabel(event),
+                              getConfirmationStyle(event),
+                              isCancellationRequestPending(event)
+                                ? "fa-solid fa-clock"
+                                : event.confirmationStatus === "CONFIRMED"
+                                  ? "fa-solid fa-circle-check"
+                                  : "fa-solid fa-circle-info",
+                            )}
                           </div>
-                        )}
-
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: "10px",
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleReviewCancellationRequest(
-                                event.appointmentId || event.id,
-                                "APPROVE",
-                              )
-                            }
-                            disabled={
-                              reviewingCancellationId ===
-                              `${event.appointmentId || event.id}-APPROVE`
-                            }
-                            style={{
-                              backgroundColor: "#dc2626",
-                              color: "#ffffff",
-                              border: "none",
-                              borderRadius: "12px",
-                              padding: "10px 14px",
-                              fontWeight: 800,
-                              cursor:
-                                reviewingCancellationId ===
-                                `${event.appointmentId || event.id}-APPROVE`
-                                  ? "not-allowed"
-                                  : "pointer",
-                              opacity:
-                                reviewingCancellationId ===
-                                `${event.appointmentId || event.id}-APPROVE`
-                                  ? 0.7
-                                  : 1,
-                            }}
-                          >
-                            {reviewingCancellationId ===
-                            `${event.appointmentId || event.id}-APPROVE`
-                              ? "Aprovando..."
-                              : "Aprovar cancelamento"}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleReviewCancellationRequest(
-                                event.appointmentId || event.id,
-                                "REJECT",
-                              )
-                            }
-                            disabled={
-                              reviewingCancellationId ===
-                              `${event.appointmentId || event.id}-REJECT`
-                            }
-                            style={{
-                              backgroundColor: "#ffffff",
-                              color: "#1d4ed8",
-                              border: "1px solid #bfdbfe",
-                              borderRadius: "12px",
-                              padding: "10px 14px",
-                              fontWeight: 800,
-                              cursor:
-                                reviewingCancellationId ===
-                                `${event.appointmentId || event.id}-REJECT`
-                                  ? "not-allowed"
-                                  : "pointer",
-                              opacity:
-                                reviewingCancellationId ===
-                                `${event.appointmentId || event.id}-REJECT`
-                                  ? 0.7
-                                  : 1,
-                            }}
-                          >
-                            {reviewingCancellationId ===
-                            `${event.appointmentId || event.id}-REJECT`
-                              ? "Rejeitando..."
-                              : "Rejeitar solicitação"}
-                          </button>
                         </div>
-                      </div>
-                    )}
 
-                    {canSendReminder(event) && (
+                        {event.patientId && (
+                          <button
+                            type="button"
+                            onClick={() => router.push(`/pacientes/${event.patientId}`)}
+                            style={{ ...buttonSecondaryStyle, padding: "10px 13px" }}
+                          >
+                            <i className="fa-solid fa-user"></i>
+                            Ver paciente
+                          </button>
+                        )}
+                      </div>
+
                       <div
                         style={{
-                          backgroundColor: "#f8fafc",
-                          border: "1px solid #dbeafe",
-                          borderRadius: "16px",
-                          padding: "14px",
-                          marginTop: "12px",
+                          display: "grid",
+                          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                          gap: "10px",
+                          marginTop: "14px",
                           marginBottom: "12px",
                         }}
                       >
+                        {event.patientName && (
+                          <InfoLine
+                            icon="fa-solid fa-user"
+                            label="Paciente"
+                            value={`${event.patientName}${event.patientEmail ? ` — ${event.patientEmail}` : ""}`}
+                          />
+                        )}
+                        <InfoLine
+                          icon="fa-solid fa-calendar-day"
+                          label="Início"
+                          value={formatDate(event.start)}
+                        />
+                        {event.end && (
+                          <InfoLine
+                            icon="fa-solid fa-hourglass-end"
+                            label="Fim"
+                            value={formatDate(event.end)}
+                          />
+                        )}
+                        {event.location && (
+                          <InfoLine
+                            icon="fa-solid fa-location-dot"
+                            label="Local"
+                            value={event.location}
+                          />
+                        )}
+                      </div>
+
+                      {event.description && (
                         <div
                           style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            color: "#1d4ed8",
-                            fontWeight: 900,
-                            marginBottom: "8px",
+                            backgroundColor: "#ffffff",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: "14px",
+                            padding: "12px 14px",
+                            color: "#4b5563",
+                            lineHeight: 1.55,
+                            marginBottom: "12px",
+                            whiteSpace: "pre-wrap",
                           }}
                         >
-                          <i className="fa-solid fa-envelope"></i>
-                          Lembrete por e-mail
+                          <strong>Descrição:</strong> {event.description}
                         </div>
+                      )}
 
-                        <p
+                      {isCancelled && (event.cancelledAt || event.cancellationReason) && (
+                        <div
                           style={{
-                            color: "#4b5563",
-                            lineHeight: 1.5,
+                            backgroundColor: "#fef2f2",
+                            border: "1px solid #fecaca",
+                            borderRadius: "14px",
+                            padding: "12px 14px",
+                            color: "#7f1d1d",
+                            lineHeight: 1.55,
                             marginBottom: "12px",
                           }}
                         >
-                          Envie um lembrete para o paciente com os dados da
-                          consulta e orientação para confirmar presença ou
-                          solicitar cancelamento no PsicoConnect.
-                        </p>
+                          {event.cancelledAt && (
+                            <p style={{ margin: "0 0 6px" }}>
+                              <strong>Cancelada em:</strong> {formatDate(event.cancelledAt)}
+                            </p>
+                          )}
+                          {event.cancellationReason && (
+                            <p style={{ margin: 0 }}>
+                              <strong>Motivo:</strong> {event.cancellationReason}
+                            </p>
+                          )}
+                        </div>
+                      )}
 
-                        {event.reminderEmailSentAt && (
-                          <p
-                            style={{
-                              color: "#065f46",
-                              fontSize: "13px",
-                              fontWeight: 800,
-                              marginBottom: "12px",
-                            }}
-                          >
-                            Último lembrete enviado em{" "}
-                            {formatDate(event.reminderEmailSentAt)}
-                          </p>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleSendReminder(event.appointmentId || event.id)
-                          }
-                          disabled={
-                            sendingReminderId ===
-                            (event.appointmentId || event.id)
-                          }
+                      {isCancellationRequestPending(event) && (
+                        <div
                           style={{
-                            backgroundColor: "#eff6ff",
-                            color: "#1d4ed8",
-                            border: "1px solid #bfdbfe",
-                            borderRadius: "12px",
-                            padding: "10px 14px",
-                            fontWeight: 800,
-                            cursor:
-                              sendingReminderId ===
-                              (event.appointmentId || event.id)
-                                ? "not-allowed"
-                                : "pointer",
-                            opacity:
-                              sendingReminderId ===
-                              (event.appointmentId || event.id)
-                                ? 0.7
-                                : 1,
+                            backgroundColor: "#fffbeb",
+                            border: "1px solid #fde68a",
+                            borderRadius: "16px",
+                            padding: "14px",
+                            marginTop: "12px",
+                            marginBottom: "12px",
                           }}
                         >
-                          {sendingReminderId ===
-                          (event.appointmentId || event.id)
-                            ? "Enviando..."
-                            : event.reminderEmailSentAt
-                              ? "Reenviar lembrete por e-mail"
-                              : "Enviar lembrete por e-mail"}
-                        </button>
-                      </div>
-                    )}
+                          <p
+                            style={{
+                              color: "#92400e",
+                              fontWeight: 900,
+                              marginBottom: "8px",
+                              display: "flex",
+                              gap: "8px",
+                              alignItems: "center",
+                            }}
+                          >
+                            <i className="fa-solid fa-triangle-exclamation"></i>
+                            Solicitação de cancelamento pendente
+                          </p>
 
-                    {event.appointmentId && (
+                          {event.cancellationRequestedAt && (
+                            <p style={{ color: "#78350f", marginBottom: "8px" }}>
+                              <strong>Solicitada em:</strong>{" "}
+                              {formatDate(event.cancellationRequestedAt)}
+                            </p>
+                          )}
+
+                          {event.cancellationRequestReason && (
+                            <div
+                              style={{
+                                backgroundColor: "#ffffff",
+                                border: "1px solid #fde68a",
+                                borderRadius: "12px",
+                                padding: "12px",
+                                color: "#4b5563",
+                                marginBottom: "12px",
+                                lineHeight: 1.5,
+                              }}
+                            >
+                              <strong>Motivo informado:</strong>{" "}
+                              {event.cancellationRequestReason}
+                            </div>
+                          )}
+
+                          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleReviewCancellationRequest(appointmentId, "APPROVE")
+                              }
+                              disabled={reviewingCancellationId === `${appointmentId}-APPROVE`}
+                              style={{
+                                backgroundColor: "#dc2626",
+                                color: "#ffffff",
+                                border: "none",
+                                borderRadius: "12px",
+                                padding: "10px 14px",
+                                fontWeight: 800,
+                                cursor:
+                                  reviewingCancellationId === `${appointmentId}-APPROVE`
+                                    ? "not-allowed"
+                                    : "pointer",
+                                opacity:
+                                  reviewingCancellationId === `${appointmentId}-APPROVE`
+                                    ? 0.7
+                                    : 1,
+                              }}
+                            >
+                              {reviewingCancellationId === `${appointmentId}-APPROVE`
+                                ? "Aprovando..."
+                                : "Aprovar cancelamento"}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleReviewCancellationRequest(appointmentId, "REJECT")
+                              }
+                              disabled={reviewingCancellationId === `${appointmentId}-REJECT`}
+                              style={{ ...buttonSecondaryStyle, padding: "10px 14px" }}
+                            >
+                              {reviewingCancellationId === `${appointmentId}-REJECT`
+                                ? "Rejeitando..."
+                                : "Rejeitar solicitação"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {canSendReminder(event) && (
+                        <div
+                          style={{
+                            backgroundColor: "#ffffff",
+                            border: "1px solid #dbeafe",
+                            borderRadius: "16px",
+                            padding: "14px",
+                            marginTop: "12px",
+                            marginBottom: "12px",
+                          }}
+                        >
+                          <p
+                            style={{
+                              color: "#1d4ed8",
+                              fontWeight: 900,
+                              marginBottom: "8px",
+                              display: "flex",
+                              gap: "8px",
+                              alignItems: "center",
+                            }}
+                          >
+                            <i className="fa-solid fa-envelope"></i>
+                            Lembrete por e-mail
+                          </p>
+
+                          <p style={{ color: "#4b5563", lineHeight: 1.5, marginBottom: "12px" }}>
+                            Envie um lembrete para o paciente com os dados da consulta e orientação
+                            para confirmar presença ou solicitar cancelamento no PsicoConnect.
+                          </p>
+
+                          {event.reminderEmailSentAt && (
+                            <p
+                              style={{
+                                color: "#065f46",
+                                fontSize: "13px",
+                                fontWeight: 800,
+                                marginBottom: "12px",
+                              }}
+                            >
+                              Último lembrete enviado em {formatDate(event.reminderEmailSentAt)}
+                            </p>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleSendReminder(appointmentId)}
+                            disabled={sendingReminderId === appointmentId}
+                            style={{
+                              ...buttonSecondaryStyle,
+                              padding: "10px 14px",
+                              opacity: sendingReminderId === appointmentId ? 0.7 : 1,
+                              cursor: sendingReminderId === appointmentId ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            {sendingReminderId === appointmentId
+                              ? "Enviando..."
+                              : event.reminderEmailSentAt
+                                ? "Reenviar lembrete por e-mail"
+                                : "Enviar lembrete por e-mail"}
+                          </button>
+                        </div>
+                      )}
+
                       <div
                         style={{
                           backgroundColor: "#ffffff",
@@ -1563,35 +1671,25 @@ export default function AgendaPage() {
                           }}
                         >
                           <div style={{ minWidth: 0 }}>
-                            <div
+                            <p
                               style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "8px",
                                 color: "#0f172a",
                                 fontWeight: 900,
                                 marginBottom: "6px",
+                                display: "flex",
+                                gap: "8px",
+                                alignItems: "center",
                               }}
                             >
                               <i className="fa-solid fa-money-bill-wave"></i>
                               Controle financeiro
-                            </div>
+                            </p>
 
-                            <p
-                              style={{
-                                color: "#4b5563",
-                                fontSize: "13px",
-                                lineHeight: 1.5,
-                                margin: 0,
-                              }}
-                            >
-                              <strong>Valor:</strong>{" "}
-                              {formatCurrency(event.paymentAmount)}
+                            <p style={{ color: "#4b5563", fontSize: "13px", lineHeight: 1.5, margin: 0 }}>
+                              <strong>Valor:</strong> {formatCurrency(event.paymentAmount)}
                               {event.paidAt ? (
                                 <>
-                                  {" "}
-                                  · <strong>Pago em:</strong>{" "}
-                                  {formatDate(event.paidAt)}
+                                  {" "}· <strong>Pago em:</strong> {formatDate(event.paidAt)}
                                 </>
                               ) : null}
                               {event.paymentNote ? (
@@ -1603,58 +1701,24 @@ export default function AgendaPage() {
                             </p>
                           </div>
 
-                          <div
-                            style={{
-                              display: "flex",
-                              gap: "8px",
-                              alignItems: "center",
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <span
-                              style={{
-                                ...getPaymentStyle(event.paymentStatus),
-                                borderRadius: "999px",
-                                padding: "5px 10px",
-                                fontSize: "12px",
-                                fontWeight: 900,
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {getPaymentLabel(event.paymentStatus)}
-                            </span>
+                          <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                            {renderBadge(getPaymentLabel(event.paymentStatus), getPaymentStyle(event.paymentStatus))}
 
                             <button
                               type="button"
                               onClick={() => {
-                                const paymentId =
-                                  event.appointmentId || event.id;
-
                                 setExpandedPaymentId((current) =>
-                                  current === paymentId ? "" : paymentId,
+                                  current === appointmentId ? "" : appointmentId,
                                 );
                               }}
-                              style={{
-                                backgroundColor: "#eff6ff",
-                                color: "#1d4ed8",
-                                border: "1px solid #bfdbfe",
-                                borderRadius: "10px",
-                                padding: "9px 12px",
-                                fontWeight: 900,
-                                cursor: "pointer",
-                                fontSize: "13px",
-                              }}
+                              style={{ ...buttonSecondaryStyle, padding: "9px 12px", fontSize: "13px" }}
                             >
-                              {expandedPaymentId ===
-                              (event.appointmentId || event.id)
-                                ? "Fechar"
-                                : "Gerenciar pagamento"}
+                              {isExpandedPayment ? "Fechar" : "Gerenciar pagamento"}
                             </button>
                           </div>
                         </div>
 
-                        {expandedPaymentId ===
-                          (event.appointmentId || event.id) && (
+                        {isExpandedPayment && (
                           <div
                             style={{
                               borderTop: "1px solid #e5e7eb",
@@ -1674,11 +1738,9 @@ export default function AgendaPage() {
                                 marginBottom: "12px",
                               }}
                             >
-                              Use este campo como controle interno. Em casos de
-                              pacote ou avaliação paga à vista, registre a
-                              consulta como isenta ou paga e detalhe na
-                              observação, por exemplo: "incluída no pacote de
-                              avaliação neuropsicológica já quitado".
+                              Use este campo como controle interno de pagamento da consulta. Em
+                              caso de pacote ou avaliação paga à vista, marque como isenta ou paga
+                              e detalhe na observação.
                             </div>
 
                             <div
@@ -1690,18 +1752,7 @@ export default function AgendaPage() {
                               }}
                             >
                               <div>
-                                <label
-                                  style={{
-                                    display: "block",
-                                    color: "#374151",
-                                    fontSize: "12px",
-                                    fontWeight: 900,
-                                    marginBottom: "6px",
-                                  }}
-                                >
-                                  Valor
-                                </label>
-
+                                <Label>Valor</Label>
                                 <input
                                   type="text"
                                   inputMode="decimal"
@@ -1709,268 +1760,105 @@ export default function AgendaPage() {
                                   onChange={(e) =>
                                     setPaymentAmounts((current) => ({
                                       ...current,
-                                      [event.appointmentId || event.id]:
-                                        e.target.value,
+                                      [appointmentId]: e.target.value,
                                     }))
                                   }
                                   placeholder="Ex.: 150,00"
-                                  style={{
-                                    width: "100%",
-                                    border: "1px solid #d1d5db",
-                                    borderRadius: "12px",
-                                    padding: "10px 12px",
-                                    fontSize: "14px",
-                                    outline: "none",
-                                  }}
+                                  style={inputStyle}
                                 />
                               </div>
 
                               <div>
-                                <label
-                                  style={{
-                                    display: "block",
-                                    color: "#374151",
-                                    fontSize: "12px",
-                                    fontWeight: 900,
-                                    marginBottom: "6px",
-                                  }}
-                                >
-                                  Observação
-                                </label>
-
+                                <Label>Observação</Label>
                                 <input
                                   type="text"
                                   value={getPaymentDraftNote(event)}
                                   onChange={(e) =>
                                     setPaymentNotes((current) => ({
                                       ...current,
-                                      [event.appointmentId || event.id]:
-                                        e.target.value,
+                                      [appointmentId]: e.target.value,
                                     }))
                                   }
                                   placeholder="Ex.: Pago via Pix, incluído em pacote, cortesia..."
-                                  style={{
-                                    width: "100%",
-                                    border: "1px solid #d1d5db",
-                                    borderRadius: "12px",
-                                    padding: "10px 12px",
-                                    fontSize: "14px",
-                                    outline: "none",
-                                  }}
+                                  style={inputStyle}
                                 />
                               </div>
                             </div>
 
-                            <div
-                              style={{
-                                display: "flex",
-                                gap: "10px",
-                                flexWrap: "wrap",
-                              }}
-                            >
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleUpdatePayment(event, "PAID")
-                                }
-                                disabled={
-                                  updatingPaymentId ===
-                                  `${event.appointmentId || event.id}-PAID`
-                                }
-                                style={{
-                                  backgroundColor: "#ecfdf5",
-                                  color: "#065f46",
-                                  border: "1px solid #a7f3d0",
-                                  borderRadius: "10px",
-                                  padding: "10px 12px",
-                                  fontWeight: 900,
-                                  cursor:
-                                    updatingPaymentId ===
-                                    `${event.appointmentId || event.id}-PAID`
-                                      ? "not-allowed"
-                                      : "pointer",
-                                  opacity:
-                                    updatingPaymentId ===
-                                    `${event.appointmentId || event.id}-PAID`
-                                      ? 0.7
-                                      : 1,
-                                }}
-                              >
-                                {updatingPaymentId ===
-                                `${event.appointmentId || event.id}-PAID`
-                                  ? "Salvando..."
-                                  : "Marcar pago"}
-                              </button>
+                            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                              {[
+                                { label: "Marcar pago", value: "PAID", style: { backgroundColor: "#ecfdf5", color: "#065f46", border: "1px solid #a7f3d0" } },
+                                { label: "Marcar isento", value: "EXEMPT", style: { backgroundColor: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" } },
+                                { label: "Voltar pendente", value: "PENDING", style: { backgroundColor: "#fffbeb", color: "#92400e", border: "1px solid #fde68a" } },
+                              ].map((button) => {
+                                const paymentStatus = button.value as PaymentStatus;
+                                const loadingKey = `${appointmentId}-${paymentStatus}`;
 
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleUpdatePayment(event, "EXEMPT")
+                                if (paymentStatus === "PENDING" && event.paymentStatus === "PENDING") {
+                                  return null;
                                 }
-                                disabled={
-                                  updatingPaymentId ===
-                                  `${event.appointmentId || event.id}-EXEMPT`
-                                }
-                                style={{
-                                  backgroundColor: "#eff6ff",
-                                  color: "#1d4ed8",
-                                  border: "1px solid #bfdbfe",
-                                  borderRadius: "10px",
-                                  padding: "10px 12px",
-                                  fontWeight: 900,
-                                  cursor:
-                                    updatingPaymentId ===
-                                    `${event.appointmentId || event.id}-EXEMPT`
-                                      ? "not-allowed"
-                                      : "pointer",
-                                  opacity:
-                                    updatingPaymentId ===
-                                    `${event.appointmentId || event.id}-EXEMPT`
-                                      ? 0.7
-                                      : 1,
-                                }}
-                              >
-                                {updatingPaymentId ===
-                                `${event.appointmentId || event.id}-EXEMPT`
-                                  ? "Salvando..."
-                                  : "Marcar isento"}
-                              </button>
 
-                              {event.paymentStatus !== "PENDING" && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleUpdatePayment(event, "PENDING")
-                                  }
-                                  disabled={
-                                    updatingPaymentId ===
-                                    `${event.appointmentId || event.id}-PENDING`
-                                  }
-                                  style={{
-                                    backgroundColor: "#fffbeb",
-                                    color: "#92400e",
-                                    border: "1px solid #fde68a",
-                                    borderRadius: "10px",
-                                    padding: "10px 12px",
-                                    fontWeight: 900,
-                                    cursor:
-                                      updatingPaymentId ===
-                                      `${event.appointmentId || event.id}-PENDING`
-                                        ? "not-allowed"
-                                        : "pointer",
-                                    opacity:
-                                      updatingPaymentId ===
-                                      `${event.appointmentId || event.id}-PENDING`
-                                        ? 0.7
-                                        : 1,
-                                  }}
-                                >
-                                  {updatingPaymentId ===
-                                  `${event.appointmentId || event.id}-PENDING`
-                                    ? "Salvando..."
-                                    : "Voltar pendente"}
-                                </button>
-                              )}
+                                return (
+                                  <button
+                                    key={button.value}
+                                    type="button"
+                                    onClick={() => handleUpdatePayment(event, paymentStatus)}
+                                    disabled={updatingPaymentId === loadingKey}
+                                    style={{
+                                      ...button.style,
+                                      borderRadius: "10px",
+                                      padding: "10px 12px",
+                                      fontWeight: 900,
+                                      cursor:
+                                        updatingPaymentId === loadingKey ? "not-allowed" : "pointer",
+                                      opacity: updatingPaymentId === loadingKey ? 0.7 : 1,
+                                    }}
+                                  >
+                                    {updatingPaymentId === loadingKey ? "Salvando..." : button.label}
+                                  </button>
+                                );
+                              })}
                             </div>
                           </div>
                         )}
                       </div>
-                    )}
 
-                    {event.htmlLink && (
-                      <a
-                        href={event.htmlLink}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          color: "#2563eb",
-                          fontWeight: 600,
-                          textDecoration: "none",
-                          display: "inline-block",
-                          marginTop: "4px",
-                        }}
-                      >
-                        Abrir no Google Calendar
-                      </a>
-                    )}
+                      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "12px" }}>
+                        {event.htmlLink && (
+                          <a
+                            href={event.htmlLink}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ ...buttonSecondaryStyle, textDecoration: "none" }}
+                          >
+                            <i className="fa-brands fa-google"></i>
+                            Abrir no Google Calendar
+                          </a>
+                        )}
 
-                    {event.patientId && (
-                      <div style={{ marginTop: "12px" }}>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            router.push(`/pacientes/${event.patientId}`)
-                          }
-                          style={{
-                            backgroundColor: "#eff6ff",
-                            color: "#1d4ed8",
-                            border: "1px solid #bfdbfe",
-                            borderRadius: "10px",
-                            padding: "10px 14px",
-                            fontWeight: 700,
-                            cursor: "pointer",
-                            fontSize: "14px",
-                          }}
-                        >
-                          Ver paciente
-                        </button>
-                      </div>
-                    )}
-
-                    {event.status !== "CANCELLED" &&
-                      !isCancellationRequestPending(event) && (
-                        <div style={{ marginTop: "14px" }}>
+                        {!isCancelled && !isCancellationRequestPending(event) && (
                           <button
                             type="button"
-                            onClick={() =>
-                              handleCancelAppointment(
-                                event.appointmentId || event.id,
-                                event.title,
-                              )
-                            }
-                            disabled={
-                              cancelingAppointmentId ===
-                              (event.appointmentId || event.id)
-                            }
+                            onClick={() => handleCancelAppointment(appointmentId, event.title)}
+                            disabled={cancelingAppointmentId === appointmentId}
                             style={{
-                              backgroundColor: "#fef2f2",
-                              color: "#b91c1c",
-                              border: "1px solid #fecaca",
-                              borderRadius: "10px",
-                              padding: "10px 14px",
-                              fontWeight: 700,
-                              cursor:
-                                cancelingAppointmentId ===
-                                (event.appointmentId || event.id)
-                                  ? "not-allowed"
-                                  : "pointer",
-                              opacity:
-                                cancelingAppointmentId ===
-                                (event.appointmentId || event.id)
-                                  ? 0.7
-                                  : 1,
+                              ...dangerButtonStyle,
+                              opacity: cancelingAppointmentId === appointmentId ? 0.7 : 1,
+                              cursor: cancelingAppointmentId === appointmentId ? "not-allowed" : "pointer",
                             }}
                           >
-                            {cancelingAppointmentId ===
-                            (event.appointmentId || event.id)
-                              ? "Cancelando..."
-                              : "Cancelar consulta"}
+                            {cancelingAppointmentId === appointmentId ? "Cancelando..." : "Cancelar consulta"}
                           </button>
-                        </div>
-                      )}
-                  </div>
-                ))}
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             )}
           </section>
 
-          <aside
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "20px",
-            }}
-          >
+          <aside style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
             <section style={cardStyle}>
               <h2
                 style={{
@@ -1983,494 +1871,497 @@ export default function AgendaPage() {
                 Integração
               </h2>
 
-              <p style={{ color: "#4b5563", marginBottom: "18px" }}>
+              <p style={{ color: "#4b5563", marginBottom: "18px", lineHeight: 1.55 }}>
                 {googleConnected
-                  ? "Sua conta Google está conectada. As consultas criadas no sistema também serão sincronizadas com o Google Calendar."
-                  : "Conecte sua conta Google para sincronizar seus atendimentos."}
+                  ? "Sua conta Google está conectada. Ao criar um novo horário por esta tela, a consulta será salva no sistema e também enviada ao Google Calendar."
+                  : "A lista de consultas usa os dados salvos no sistema. Conecte sua conta Google apenas quando quiser criar horários sincronizados com o Calendar."}
               </p>
 
               {googleConnected ? (
-                <div style={buttonSuccessStyle}>Google Calendar conectado</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  <div
+                    style={{
+                      backgroundColor: "#ecfdf5",
+                      color: "#065f46",
+                      border: "1px solid #a7f3d0",
+                      borderRadius: "14px",
+                      padding: "12px 18px",
+                      fontWeight: 900,
+                      fontSize: "14px",
+                      width: "100%",
+                      textAlign: "center",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <i className="fa-solid fa-circle-check"></i>
+                    Google Calendar conectado
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleDisconnectGoogle}
+                    disabled={disconnectingGoogle}
+                    style={{
+                      backgroundColor: "#ffffff",
+                      color: "#475569",
+                      border: "1px solid #d1d5db",
+                      borderRadius: "12px",
+                      padding: "10px 14px",
+                      fontWeight: 800,
+                      cursor: disconnectingGoogle ? "not-allowed" : "pointer",
+                      fontSize: "13px",
+                      width: "100%",
+                      opacity: disconnectingGoogle ? 0.7 : 1,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <i className="fa-solid fa-link-slash"></i>
+                    {disconnectingGoogle ? "Desconectando..." : "Desconectar"}
+                  </button>
+                </div>
               ) : (
                 <button
                   type="button"
-                  style={buttonSecondaryStyle}
+                  style={{ ...buttonSecondaryStyle, width: "100%" }}
                   onClick={() => signIn("google", { callbackUrl: "/agenda" })}
                 >
+                  <i className="fa-brands fa-google"></i>
                   Conectar com Google Calendar
                 </button>
               )}
             </section>
+
+            <section style={cardStyle}>
+              <h2
+                style={{
+                  fontSize: "22px",
+                  fontWeight: 900,
+                  color: "#0f172a",
+                  marginBottom: "12px",
+                }}
+              >
+                Origem das consultas
+              </h2>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                <InfoLine
+                  icon="fa-solid fa-database"
+                  label="Somente no sistema"
+                  value={`${systemOnlyEvents} consulta(s)`}
+                />
+                <InfoLine
+                  icon="fa-brands fa-google"
+                  label="Sincronizadas"
+                  value={`${googleSyncedEvents} consulta(s)`}
+                />
+              </div>
+
+            </section>
           </aside>
         </div>
+
+        <div style={{ height: "90px" }} aria-hidden="true" />
       </div>
 
       {appointmentToCancel && (
-        <div
-          onClick={closeCancelModal}
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(15, 23, 42, 0.55)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "24px",
-            zIndex: 1001,
-            backdropFilter: "blur(6px)",
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
+        <Modal onClose={closeCancelModal} maxWidth="520px" zIndex={1001}>
+          <h2
             style={{
-              width: "100%",
-              maxWidth: "520px",
-              backgroundColor: "#ffffff",
-              borderRadius: "24px",
-              padding: "30px",
-              boxShadow: "0 24px 70px rgba(15, 23, 42, 0.24)",
-              border: "1px solid #e5e7eb",
+              fontSize: "24px",
+              fontWeight: 900,
+              color: "#0f172a",
+              marginBottom: "10px",
             }}
           >
+            Cancelar consulta?
+          </h2>
+
+          <p style={{ color: "#4b5563", marginBottom: "18px", lineHeight: 1.5 }}>
+            A consulta <strong>{appointmentToCancel.title}</strong> será cancelada no
+            sistema e, se estiver sincronizada, também será removida do Google Calendar.
+          </p>
+
+          <div style={{ marginBottom: "18px" }}>
+            <Label>Motivo do cancelamento</Label>
+            <textarea
+              value={cancellationReason}
+              onChange={(e) => setCancellationReason(e.target.value)}
+              placeholder="Opcional. Ex.: Remarcação por conflito de horário."
+              rows={4}
+              style={{ ...inputStyle, resize: "vertical" }}
+            />
+            <p style={{ color: "#6b7280", fontSize: "13px", marginTop: "8px", marginBottom: 0 }}>
+              Se preenchido, esse motivo será enviado ao paciente no e-mail de cancelamento.
+            </p>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+            <button
+              type="button"
+              onClick={closeCancelModal}
+              style={{
+                backgroundColor: "#fff",
+                color: "#1f2937",
+                border: "1px solid #d1d5db",
+                borderRadius: "12px",
+                padding: "10px 14px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+              disabled={cancelingAppointmentId === appointmentToCancel.id}
+            >
+              Voltar
+            </button>
+
+            <button
+              type="button"
+              onClick={confirmCancelAppointment}
+              disabled={cancelingAppointmentId === appointmentToCancel.id}
+              style={{
+                backgroundColor: "#dc2626",
+                color: "#fff",
+                border: "none",
+                borderRadius: "12px",
+                padding: "10px 14px",
+                fontWeight: 700,
+                cursor:
+                  cancelingAppointmentId === appointmentToCancel.id ? "not-allowed" : "pointer",
+                opacity: cancelingAppointmentId === appointmentToCancel.id ? 0.7 : 1,
+              }}
+            >
+              {cancelingAppointmentId === appointmentToCancel.id
+                ? "Cancelando..."
+                : "Confirmar cancelamento"}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {isModalOpen && (
+        <Modal onClose={handleCloseModal} maxWidth="720px" zIndex={1000}>
+          <div style={{ marginBottom: "22px" }}>
             <h2
               style={{
-                fontSize: "24px",
+                fontSize: "28px",
                 fontWeight: 900,
-                color: "#0f172a",
-                marginBottom: "10px",
+                color: "#111827",
+                marginBottom: "8px",
               }}
             >
-              Cancelar consulta?
+              Novo horário
             </h2>
-
-            <p
-              style={{
-                color: "#4b5563",
-                marginBottom: "18px",
-                lineHeight: 1.5,
-              }}
-            >
-              A consulta <strong>{appointmentToCancel.title}</strong> será
-              cancelada no sistema e removida do Google Calendar.
+            <p style={{ color: "#6b7280", margin: 0 }}>
+              Preencha os dados da consulta para criar o agendamento no sistema e no
+              Google Calendar.
             </p>
+          </div>
 
-            <div style={{ marginBottom: "18px" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontWeight: 900,
-                  color: "#0f172a",
-                  marginBottom: "8px",
-                }}
-              >
-                Motivo do cancelamento
-              </label>
-
-              <textarea
-                value={cancellationReason}
-                onChange={(e) => setCancellationReason(e.target.value)}
-                placeholder="Opcional. Ex.: Remarcação por conflito de horário."
-                rows={4}
-                style={{
-                  width: "100%",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "12px",
-                  padding: "12px 14px",
-                  fontSize: "14px",
-                  outline: "none",
-                  resize: "vertical",
-                }}
-              />
-
-              <p
-                style={{
-                  color: "#6b7280",
-                  fontSize: "13px",
-                  marginTop: "8px",
-                  marginBottom: 0,
-                  lineHeight: 1.4,
-                }}
-              >
-                Se preenchido, esse motivo será enviado ao paciente no e-mail de
-                cancelamento.
-              </p>
-            </div>
-
+          {formError && (
             <div
               style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "12px",
+                backgroundColor: "#fef2f2",
+                border: "1px solid #fecaca",
+                color: "#b91c1c",
+                borderRadius: "12px",
+                padding: "12px 14px",
+                marginBottom: "16px",
+                fontWeight: 700,
               }}
             >
+              {formError}
+            </div>
+          )}
+
+          <form noValidate onSubmit={handleSubmitAppointment}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "16px",
+                marginBottom: "16px",
+              }}
+            >
+              <div style={{ gridColumn: "1 / -1" }}>
+                <Label>Título</Label>
+                <input
+                  type="text"
+                  value={appointmentTitle}
+                  onChange={(e) => setAppointmentTitle(e.target.value)}
+                  placeholder="Ex.: Sessão com paciente"
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={{ gridColumn: "1 / -1" }}>
+                <Label>Paciente</Label>
+                <select
+                  value={selectedPatientId}
+                  onChange={(e) => setSelectedPatientId(e.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="">
+                    {loadingPatients
+                      ? "Carregando pacientes..."
+                      : patients.length === 0
+                        ? "Nenhum paciente cadastrado"
+                        : "Selecione um paciente"}
+                  </option>
+
+                  {patients.map((patient) => (
+                    <option key={patient.id} value={patient.id}>
+                      {patient.name} — {patient.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <Label>Data</Label>
+                <input
+                  type="date"
+                  value={appointmentDate}
+                  onChange={(e) => setAppointmentDate(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <Label>Local</Label>
+                <input
+                  type="text"
+                  value={appointmentLocation}
+                  onChange={(e) => setAppointmentLocation(e.target.value)}
+                  placeholder="Ex.: Atendimento online"
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <Label>Hora inicial</Label>
+                <input
+                  type="time"
+                  value={appointmentStartTime}
+                  onChange={(e) => setAppointmentStartTime(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <Label>Hora final</Label>
+                <input
+                  type="time"
+                  value={appointmentEndTime}
+                  onChange={(e) => setAppointmentEndTime(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={{ gridColumn: "1 / -1" }}>
+                <Label>Descrição</Label>
+                <textarea
+                  value={appointmentDescription}
+                  onChange={(e) => setAppointmentDescription(e.target.value)}
+                  placeholder="Observações sobre o atendimento"
+                  rows={4}
+                  style={{ ...inputStyle, resize: "vertical" }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "24px" }}>
               <button
                 type="button"
-                onClick={closeCancelModal}
+                onClick={handleCloseModal}
                 style={{
                   backgroundColor: "#fff",
                   color: "#1f2937",
                   border: "1px solid #d1d5db",
                   borderRadius: "12px",
-                  padding: "10px 14px",
+                  padding: "12px 18px",
                   fontWeight: 700,
                   cursor: "pointer",
+                  fontSize: "14px",
                 }}
-                disabled={cancelingAppointmentId === appointmentToCancel.id}
               >
-                Voltar
+                Cancelar
               </button>
 
               <button
-                type="button"
-                onClick={confirmCancelAppointment}
-                disabled={cancelingAppointmentId === appointmentToCancel.id}
+                type="submit"
                 style={{
-                  backgroundColor: "#dc2626",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "12px",
-                  padding: "10px 14px",
-                  fontWeight: 700,
+                  ...buttonPrimaryStyle,
+                  opacity: savingAppointment || patients.length === 0 ? 0.7 : 1,
                   cursor:
-                    cancelingAppointmentId === appointmentToCancel.id
-                      ? "not-allowed"
-                      : "pointer",
-                  opacity:
-                    cancelingAppointmentId === appointmentToCancel.id ? 0.7 : 1,
+                    savingAppointment || patients.length === 0 ? "not-allowed" : "pointer",
                 }}
+                disabled={savingAppointment || patients.length === 0}
               >
-                {cancelingAppointmentId === appointmentToCancel.id
-                  ? "Cancelando..."
-                  : "Confirmar cancelamento"}
+                {savingAppointment ? "Salvando..." : "Salvar horário"}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {isModalOpen && (
-        <div
-          onClick={handleCloseModal}
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(15, 23, 42, 0.55)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "24px",
-            zIndex: 1000,
-            backdropFilter: "blur(6px)",
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "100%",
-              maxWidth: "720px",
-              backgroundColor: "#ffffff",
-              borderRadius: "24px",
-              padding: "30px",
-              boxShadow: "0 24px 70px rgba(15, 23, 42, 0.24)",
-              border: "1px solid #e5e7eb",
-            }}
-          >
-            <div style={{ marginBottom: "22px" }}>
-              <h2
-                style={{
-                  fontSize: "28px",
-                  fontWeight: 800,
-                  color: "#111827",
-                  marginBottom: "8px",
-                }}
-              >
-                Novo horário
-              </h2>
-
-              <p style={{ color: "#6b7280", margin: 0 }}>
-                Preencha os dados da consulta para criar o agendamento no
-                sistema e no Google Calendar.
-              </p>
-            </div>
-
-            {formError && (
-              <div
-                style={{
-                  backgroundColor: "#fef2f2",
-                  border: "1px solid #fecaca",
-                  color: "#b91c1c",
-                  borderRadius: "12px",
-                  padding: "12px 14px",
-                  marginBottom: "16px",
-                  fontWeight: 700,
-                }}
-              >
-                {formError}
-              </div>
-            )}
-
-            <form noValidate onSubmit={handleSubmitAppointment}>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "16px",
-                  marginBottom: "16px",
-                }}
-              >
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <label
-                    style={{
-                      display: "block",
-                      fontWeight: 700,
-                      color: "#111827",
-                      marginBottom: "8px",
-                    }}
-                  >
-                    Título
-                  </label>
-
-                  <input
-                    type="text"
-                    value={appointmentTitle}
-                    onChange={(e) => setAppointmentTitle(e.target.value)}
-                    placeholder="Ex.: Sessão com paciente"
-                    style={{
-                      width: "100%",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "12px",
-                      padding: "12px 14px",
-                      fontSize: "14px",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <label
-                    style={{
-                      display: "block",
-                      fontWeight: 700,
-                      color: "#111827",
-                      marginBottom: "8px",
-                    }}
-                  >
-                    Paciente
-                  </label>
-
-                  <select
-                    value={selectedPatientId}
-                    onChange={(e) => setSelectedPatientId(e.target.value)}
-                    style={{
-                      width: "100%",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "12px",
-                      padding: "12px 14px",
-                      fontSize: "14px",
-                      outline: "none",
-                      backgroundColor: "#fff",
-                    }}
-                  >
-                    <option value="">
-                      {loadingPatients
-                        ? "Carregando pacientes..."
-                        : patients.length === 0
-                          ? "Nenhum paciente cadastrado"
-                          : "Selecione um paciente"}
-                    </option>
-
-                    {patients.map((patient) => (
-                      <option key={patient.id} value={patient.id}>
-                        {patient.name} — {patient.email}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontWeight: 700,
-                      color: "#111827",
-                      marginBottom: "8px",
-                    }}
-                  >
-                    Data
-                  </label>
-
-                  <input
-                    type="date"
-                    value={appointmentDate}
-                    onChange={(e) => setAppointmentDate(e.target.value)}
-                    style={{
-                      width: "100%",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "12px",
-                      padding: "12px 14px",
-                      fontSize: "14px",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontWeight: 700,
-                      color: "#111827",
-                      marginBottom: "8px",
-                    }}
-                  >
-                    Local
-                  </label>
-
-                  <input
-                    type="text"
-                    value={appointmentLocation}
-                    onChange={(e) => setAppointmentLocation(e.target.value)}
-                    placeholder="Ex.: Atendimento online"
-                    style={{
-                      width: "100%",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "12px",
-                      padding: "12px 14px",
-                      fontSize: "14px",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontWeight: 700,
-                      color: "#111827",
-                      marginBottom: "8px",
-                    }}
-                  >
-                    Hora inicial
-                  </label>
-
-                  <input
-                    type="time"
-                    value={appointmentStartTime}
-                    onChange={(e) => setAppointmentStartTime(e.target.value)}
-                    style={{
-                      width: "100%",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "12px",
-                      padding: "12px 14px",
-                      fontSize: "14px",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontWeight: 700,
-                      color: "#111827",
-                      marginBottom: "8px",
-                    }}
-                  >
-                    Hora final
-                  </label>
-
-                  <input
-                    type="time"
-                    value={appointmentEndTime}
-                    onChange={(e) => setAppointmentEndTime(e.target.value)}
-                    style={{
-                      width: "100%",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "12px",
-                      padding: "12px 14px",
-                      fontSize: "14px",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <label
-                    style={{
-                      display: "block",
-                      fontWeight: 700,
-                      color: "#111827",
-                      marginBottom: "8px",
-                    }}
-                  >
-                    Descrição
-                  </label>
-
-                  <textarea
-                    value={appointmentDescription}
-                    onChange={(e) => setAppointmentDescription(e.target.value)}
-                    placeholder="Observações sobre o atendimento"
-                    rows={4}
-                    style={{
-                      width: "100%",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "12px",
-                      padding: "12px 14px",
-                      fontSize: "14px",
-                      outline: "none",
-                      resize: "vertical",
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  gap: "12px",
-                  marginTop: "24px",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={handleCloseModal}
-                  style={{
-                    backgroundColor: "#fff",
-                    color: "#1f2937",
-                    border: "1px solid #d1d5db",
-                    borderRadius: "12px",
-                    padding: "12px 18px",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    fontSize: "14px",
-                  }}
-                >
-                  Cancelar
-                </button>
-
-                <button
-                  type="submit"
-                  style={{
-                    ...buttonPrimaryStyle,
-                    opacity:
-                      savingAppointment || patients.length === 0 ? 0.7 : 1,
-                    cursor:
-                      savingAppointment || patients.length === 0
-                        ? "not-allowed"
-                        : "pointer",
-                  }}
-                  disabled={savingAppointment || patients.length === 0}
-                >
-                  {savingAppointment ? "Salvando..." : "Salvar horário"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+          </form>
+        </Modal>
       )}
     </>
+  );
+}
+
+function Label({ children }: { children: React.ReactNode }) {
+  return (
+    <label
+      style={{
+        display: "block",
+        fontWeight: 800,
+        color: "#111827",
+        marginBottom: "8px",
+      }}
+    >
+      {children}
+    </label>
+  );
+}
+
+function InfoLine({
+  icon,
+  label,
+  value,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div
+      style={{
+        backgroundColor: "#ffffff",
+        border: "1px solid #e5e7eb",
+        borderRadius: "13px",
+        padding: "11px 12px",
+        minWidth: 0,
+      }}
+    >
+      <p
+        style={{
+          color: "#64748b",
+          fontSize: "12px",
+          fontWeight: 900,
+          marginBottom: "5px",
+          display: "flex",
+          alignItems: "center",
+          gap: "7px",
+        }}
+      >
+        <i className={icon}></i>
+        {label}
+      </p>
+      <p
+        style={{
+          color: "#111827",
+          fontWeight: 800,
+          margin: 0,
+          wordBreak: "break-word",
+          lineHeight: 1.4,
+        }}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function EmptyState({
+  icon,
+  title,
+  description,
+}: {
+  icon: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div
+      style={{
+        border: "1px solid #e5e7eb",
+        borderRadius: "18px",
+        padding: "28px",
+        backgroundColor: "#f8fafc",
+        textAlign: "center",
+      }}
+    >
+      <div
+        style={{
+          width: "54px",
+          height: "54px",
+          borderRadius: "18px",
+          backgroundColor: "#eff6ff",
+          color: "#1d4ed8",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: "22px",
+          marginBottom: "14px",
+        }}
+      >
+        <i className={icon}></i>
+      </div>
+      <p style={{ fontWeight: 900, color: "#111827", marginBottom: "6px" }}>
+        {title}
+      </p>
+      <p style={{ color: "#6b7280", margin: 0, lineHeight: 1.5 }}>
+        {description}
+      </p>
+    </div>
+  );
+}
+
+function Modal({
+  children,
+  onClose,
+  maxWidth,
+  zIndex,
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+  maxWidth: string;
+  zIndex: number;
+}) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        backgroundColor: "rgba(15, 23, 42, 0.55)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+        zIndex,
+        backdropFilter: "blur(6px)",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%",
+          maxWidth,
+          maxHeight: "calc(100vh - 48px)",
+          overflow: "auto",
+          backgroundColor: "#ffffff",
+          borderRadius: "24px",
+          padding: "30px",
+          boxShadow: "0 24px 70px rgba(15, 23, 42, 0.24)",
+          border: "1px solid #e5e7eb",
+        }}
+      >
+        {children}
+      </div>
+    </div>
   );
 }
