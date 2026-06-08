@@ -122,7 +122,9 @@ function getFirstValidationMessage(error: z.ZodError) {
     return typeof issue.message === "string" && issue.message.trim().length > 0;
   });
 
-  return firstIssue?.message || "Alguns dados do cadastro precisam ser corrigidos.";
+  return (
+    firstIssue?.message || "Alguns dados do cadastro precisam ser corrigidos."
+  );
 }
 
 function getFriendlyPrismaError(error: unknown) {
@@ -147,6 +149,14 @@ function getFriendlyPrismaError(error: unknown) {
   }
 
   return null;
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "";
 }
 
 export async function POST(req: Request) {
@@ -189,7 +199,9 @@ export async function POST(req: Request) {
     if (exists) {
       if (!exists.emailVerified) {
         try {
-          const verificationToken = await generateVerificationToken(exists.email);
+          const verificationToken = await generateVerificationToken(
+            exists.email,
+          );
 
           await sendVerificationEmail(
             verificationToken.email,
@@ -326,18 +338,20 @@ export async function POST(req: Request) {
           ? "Cadastro concluído! Verifique seu e-mail. Após a confirmação, seu cadastro profissional ficará aguardando análise do CRP."
           : "Cadastro concluído! Verifique seu e-mail para ativar sua conta.",
     });
-  } catch (e: any) {
-    if (e instanceof z.ZodError) {
+  } catch (error: unknown) {
+    if (error instanceof z.ZodError) {
       return NextResponse.json(
         {
-          error: getFirstValidationMessage(e),
-          details: e.flatten().fieldErrors,
+          error: getFirstValidationMessage(error),
+          details: error.flatten().fieldErrors,
         },
         { status: 400 },
       );
     }
 
-    if (e?.message === "INVALID_CRP_STATE") {
+    const errorMessage = getErrorMessage(error);
+
+    if (errorMessage === "INVALID_CRP_STATE") {
       return NextResponse.json(
         {
           error:
@@ -347,7 +361,7 @@ export async function POST(req: Request) {
       );
     }
 
-    if (e?.message === "INVALID_CRP_NUMBER") {
+    if (errorMessage === "INVALID_CRP_NUMBER") {
       return NextResponse.json(
         {
           error:
@@ -357,7 +371,7 @@ export async function POST(req: Request) {
       );
     }
 
-    if (e?.message === "MISSING_CRP_DATA") {
+    if (errorMessage === "MISSING_CRP_DATA") {
       return NextResponse.json(
         {
           error:
@@ -367,13 +381,13 @@ export async function POST(req: Request) {
       );
     }
 
-    const prismaError = getFriendlyPrismaError(e);
+    const prismaError = getFriendlyPrismaError(error);
 
     if (prismaError) {
       return NextResponse.json({ error: prismaError }, { status: 409 });
     }
 
-    console.error("Erro inesperado no cadastro:", e);
+    console.error("Erro inesperado no cadastro:", error);
 
     return NextResponse.json(
       {

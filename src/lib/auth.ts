@@ -4,6 +4,25 @@ import { z } from "zod";
 import bcrypt from "bcrypt";
 import prisma from "./prisma";
 
+type UserRole = "ADMIN" | "PSYCHOLOGIST" | "PATIENT";
+type CrpVerificationStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+type AuthenticatedUser = {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  role: UserRole;
+  crpVerificationStatus?: CrpVerificationStatus | null;
+  crpVerifiedAt?: string | null;
+};
+
+type SessionUserWithCustomFields = {
+  id?: string;
+  role?: UserRole;
+  crpVerificationStatus?: CrpVerificationStatus | null;
+  crpVerifiedAt?: string | null;
+};
+
 export const authConfig: NextAuthOptions = {
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
@@ -104,10 +123,12 @@ export const authConfig: NextAuthOptions = {
       }
 
       if (user && !token.id) {
-        token.id = (user as any).id;
-        token.role = (user as any).role;
-        token.crpVerificationStatus = (user as any).crpVerificationStatus;
-        token.crpVerifiedAt = (user as any).crpVerifiedAt;
+        const authUser = user as AuthenticatedUser;
+
+        token.id = authUser.id;
+        token.role = authUser.role;
+        token.crpVerificationStatus = authUser.crpVerificationStatus ?? null;
+        token.crpVerifiedAt = authUser.crpVerifiedAt ?? null;
       }
 
       return token;
@@ -115,11 +136,27 @@ export const authConfig: NextAuthOptions = {
 
     async session({ session, token }) {
       if (session.user) {
-        (session.user as any).id = token.id;
-        (session.user as any).role = token.role;
-        (session.user as any).crpVerificationStatus =
-          token.crpVerificationStatus;
-        (session.user as any).crpVerifiedAt = token.crpVerifiedAt;
+        const sessionUser = session.user as typeof session.user &
+          SessionUserWithCustomFields;
+
+        sessionUser.id = typeof token.id === "string" ? token.id : undefined;
+
+        sessionUser.role =
+          token.role === "ADMIN" ||
+          token.role === "PSYCHOLOGIST" ||
+          token.role === "PATIENT"
+            ? token.role
+            : undefined;
+
+        sessionUser.crpVerificationStatus =
+          token.crpVerificationStatus === "PENDING" ||
+          token.crpVerificationStatus === "APPROVED" ||
+          token.crpVerificationStatus === "REJECTED"
+            ? token.crpVerificationStatus
+            : null;
+
+        sessionUser.crpVerifiedAt =
+          typeof token.crpVerifiedAt === "string" ? token.crpVerifiedAt : null;
       }
 
       return session;
