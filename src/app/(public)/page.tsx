@@ -59,8 +59,14 @@ export default function LandingPage() {
 
       <section id="como-funciona" className="landing-cards-section">
         <div className="landing-card-block">
-          <div className="landing-icon-circle" style={{ backgroundColor: "#ffffff" }}>
-            <i className="fa-regular fa-calendar-check" style={{ color: "#528cff" }}></i>
+          <div
+            className="landing-icon-circle"
+            style={{ backgroundColor: "#ffffff" }}
+          >
+            <i
+              className="fa-regular fa-calendar-check"
+              style={{ color: "#528cff" }}
+            ></i>
           </div>
           <h3>Para Pacientes</h3>
           <p>
@@ -75,7 +81,10 @@ export default function LandingPage() {
         </div>
 
         <div className="landing-card-block">
-          <div className="landing-icon-circle" style={{ backgroundColor: "#ffffff" }}>
+          <div
+            className="landing-icon-circle"
+            style={{ backgroundColor: "#ffffff" }}
+          >
             <img
               src="/psicobot_icon_white.png"
               alt=""
@@ -103,8 +112,14 @@ export default function LandingPage() {
         </div>
 
         <div className="landing-card-block">
-          <div className="landing-icon-circle" style={{ backgroundColor: "#ffffff" }}>
-            <i className="fa-regular fa-clipboard" style={{ color: "#528cff" }}></i>
+          <div
+            className="landing-icon-circle"
+            style={{ backgroundColor: "#ffffff" }}
+          >
+            <i
+              className="fa-regular fa-clipboard"
+              style={{ color: "#528cff" }}
+            ></i>
           </div>
           <h3>Para Psicólogos</h3>
           <p>
@@ -139,7 +154,9 @@ export default function LandingPage() {
             <p>
               O acesso aos dados respeita o papel do usuário: pacientes acessam
               apenas suas próprias informações, psicólogos acessam somente
-              pacientes vinculados e administradores atuam na gestão de usuários.
+              pacientes vinculados e pessoas autorizadas pela operação da
+              plataforma atuam apenas quando necessário para fins técnicos,
+              operacionais, de segurança ou legais.
             </p>
           </div>
 
@@ -173,11 +190,12 @@ export default function LandingPage() {
             <a href="#inicio">Início</a>
             <a href="#como-funciona">Como funciona</a>
             <a href="#sobre">Sobre</a>
+            <Link href="/legal">Termos e Privacidade</Link>
           </div>
         </div>
 
         <div className="landing-footer-copy">
-          © 2025 PsicoConnect - Todos os direitos reservados.
+          © 2026 PsicoConnect - Todos os direitos reservados.
         </div>
       </footer>
     </main>

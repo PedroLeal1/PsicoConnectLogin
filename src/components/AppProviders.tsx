@@ -43,7 +43,6 @@ function PsicoNavigationLoading() {
   );
 }
 
-
 const menuIconStyle = {
   width: "42px",
   minWidth: "42px",
@@ -87,8 +86,10 @@ function AuthGuard({ children }: PropsWithChildren) {
     pathname.startsWith("/reset-password");
 
   const isLandingPage = pathname === "/";
+  const isLegalPage = pathname === "/legal" || pathname.startsWith("/legal/");
   const isVerificationPage = pathname.startsWith("/aguardando-verificacao");
-  const isPublicPage = isAuthPage || isLandingPage;
+
+  const isPublicPage = isAuthPage || isLandingPage || isLegalPage;
 
   const shouldRedirectAuthenticatedUser =
     pathname.startsWith("/login") ||

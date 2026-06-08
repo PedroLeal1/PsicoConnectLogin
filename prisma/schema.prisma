@@ -17,6 +17,15 @@ model User {
   updatedAt     DateTime  @updatedAt
   emailVerified DateTime?
 
+  acceptedTermsAt              DateTime?
+  acceptedTermsVersion         String?
+  acceptedPrivacyAt            DateTime?
+  acceptedPrivacyVersion       String?
+  acceptedAiPolicyAt           DateTime?
+  acceptedAiPolicyVersion      String?
+  acceptedSensitiveDataAt      DateTime?
+  acceptedSensitiveDataVersion String?
+
   profileImageUrl String?
   phone           String?
   city            String?

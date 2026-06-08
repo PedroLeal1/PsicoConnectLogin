@@ -10,6 +10,14 @@ type CrpOption = {
   label: string;
 };
 
+type ApiResponse = {
+  ok?: boolean;
+  warning?: boolean;
+  message?: string;
+  error?: string;
+  details?: Record<string, string[] | undefined>;
+};
+
 const CRP_OPTIONS: CrpOption[] = [
   { state: "AC", region: "24", label: "AC - Acre / CRP-24" },
   { state: "AL", region: "15", label: "AL - Alagoas / CRP-15" },
@@ -49,8 +57,14 @@ export default function SignupPage() {
   const [crpState, setCrpState] = useState("");
   const [crpNumber, setCrpNumber] = useState("");
 
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
+  const [acceptedSensitiveAi, setAcceptedSensitiveAi] = useState(false);
+
   const [isLoading, setIsLoading] = useState(false);
-  const [apiError, setApiError] = useState("");
+  const [apiMessage, setApiMessage] = useState("");
+  const [apiMessageType, setApiMessageType] = useState<"success" | "error">(
+    "error",
+  );
 
   const [nomeError, setNomeError] = useState("");
   const [emailError, setEmailError] = useState("");
@@ -58,6 +72,8 @@ export default function SignupPage() {
   const [confirmarSenhaError, setConfirmarSenhaError] = useState("");
   const [crpStateError, setCrpStateError] = useState("");
   const [crpNumberError, setCrpNumberError] = useState("");
+  const [acceptedLegalError, setAcceptedLegalError] = useState("");
+  const [acceptedSensitiveAiError, setAcceptedSensitiveAiError] = useState("");
 
   const searchParams = useSearchParams();
 
@@ -77,21 +93,56 @@ export default function SignupPage() {
     }
   }, [searchParams]);
 
-  function handleCrpNumberChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const value = e.target.value.replace(/\D/g, "").slice(0, 8);
-    setCrpNumber(value);
-  }
-
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setIsLoading(true);
-    setApiError("");
+  function resetErrors() {
+    setApiMessage("");
+    setApiMessageType("error");
     setNomeError("");
     setEmailError("");
     setSenhaError("");
     setConfirmarSenhaError("");
     setCrpStateError("");
     setCrpNumberError("");
+    setAcceptedLegalError("");
+    setAcceptedSensitiveAiError("");
+  }
+
+  function handleCrpNumberChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const value = e.target.value.replace(/\D/g, "").slice(0, 8);
+    setCrpNumber(value);
+
+    if (crpNumberError) {
+      setCrpNumberError("");
+    }
+  }
+
+  function applyApiFieldErrors(details?: Record<string, string[] | undefined>) {
+    if (!details) return;
+
+    if (details.name?.[0]) setNomeError(details.name[0]);
+    if (details.email?.[0]) setEmailError(details.email[0]);
+    if (details.password?.[0]) setSenhaError(details.password[0]);
+    if (details.confirmPassword?.[0]) {
+      setConfirmarSenhaError(details.confirmPassword[0]);
+    }
+
+    if (details.role?.[0]) setApiMessage(details.role[0]);
+    if (details.crp?.[0]) setCrpNumberError(details.crp[0]);
+    if (details.crpState?.[0]) setCrpStateError(details.crpState[0]);
+    if (details.crpNumber?.[0]) setCrpNumberError(details.crpNumber[0]);
+
+    if (details.acceptedLegal?.[0]) {
+      setAcceptedLegalError(details.acceptedLegal[0]);
+    }
+
+    if (details.acceptedSensitiveAi?.[0]) {
+      setAcceptedSensitiveAiError(details.acceptedSensitiveAi[0]);
+    }
+  }
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsLoading(true);
+    resetErrors();
 
     let isValid = true;
 
@@ -110,7 +161,10 @@ export default function SignupPage() {
       isValid = false;
     }
 
-    if (senha !== confirmarSenha) {
+    if (confirmarSenha.trim() === "") {
+      setConfirmarSenhaError("Por favor, confirme sua senha.");
+      isValid = false;
+    } else if (senha !== confirmarSenha) {
       setConfirmarSenhaError("As senhas não coincidem.");
       isValid = false;
     }
@@ -122,14 +176,31 @@ export default function SignupPage() {
       }
 
       if (!/^\d{4,8}$/.test(crpNumber)) {
-        setCrpNumberError("Informe apenas o número do CRP, sem o prefixo regional. Ex: 123456.");
+        setCrpNumberError(
+          "Informe apenas o número do CRP, sem o prefixo regional. Ex: 123456.",
+        );
         isValid = false;
       }
     }
 
+    if (!acceptedLegal) {
+      setAcceptedLegalError(
+        "Você precisa aceitar os Termos de Uso e a Política de Privacidade.",
+      );
+      isValid = false;
+    }
+
+    if (!acceptedSensitiveAi) {
+      setAcceptedSensitiveAiError(
+        "Você precisa autorizar o tratamento de dados sensíveis e compreender os limites da Inteligência Artificial.",
+      );
+      isValid = false;
+    }
+
     if (!isValid) {
       setIsLoading(false);
-      setApiError("Dados inválidos. Verifique os campos.");
+      setApiMessage("Verifique os campos destacados antes de continuar.");
+      setApiMessageType("error");
       return;
     }
 
@@ -147,38 +218,37 @@ export default function SignupPage() {
           crpRegion: role === "psicologo" ? crpRegion : "",
           crpState: role === "psicologo" ? crpState : "",
           crpNumber: role === "psicologo" ? crpNumber : "",
+          acceptedLegal,
+          acceptedSensitiveAi,
         }),
       });
 
-      const data = await response.json();
+      const data = (await response.json()) as ApiResponse;
 
       if (!response.ok) {
-        setApiError(data.error || "Dados inválidos. Verifique os campos.");
-
-        if (data.details) {
-          data.details.name?.forEach((err: string) => setNomeError(err));
-          data.details.email?.forEach((err: string) => setEmailError(err));
-          data.details.password?.forEach((err: string) => setSenhaError(err));
-          data.details.confirmPassword?.forEach((err: string) =>
-            setConfirmarSenhaError(err),
-          );
-          data.details.role?.forEach((err: string) => setApiError(err));
-          data.details.crp?.forEach((err: string) => setCrpNumberError(err));
-          data.details.crpState?.forEach((err: string) => setCrpStateError(err));
-          data.details.crpNumber?.forEach((err: string) => setCrpNumberError(err));
-        }
-      } else {
-        setApiError(data.message || "Registro concluído! Verifique o seu email.");
+        setApiMessage(
+          data.error ||
+            "Não foi possível concluir o cadastro. Confira os dados e tente novamente.",
+        );
+        setApiMessageType("error");
+        applyApiFieldErrors(data.details);
+        return;
       }
+
+      setApiMessage(
+        data.message ||
+          "Cadastro concluído! Verifique seu e-mail para ativar sua conta.",
+      );
+      setApiMessageType("success");
     } catch {
-      setApiError("Não foi possível conectar ao servidor. Tente novamente.");
+      setApiMessage(
+        "Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.",
+      );
+      setApiMessageType("error");
     } finally {
       setIsLoading(false);
     }
   };
-
-  const isSuccessMessage =
-    apiError.startsWith("Registro") || apiError.startsWith("Email");
 
   return (
     <main className="public-page-wrapper signup-page">
@@ -210,15 +280,27 @@ export default function SignupPage() {
           </div>
 
           <h2>Criar Conta</h2>
-          {apiError && (
+
+          {apiMessage && (
             <small
               style={{
-                color: isSuccessMessage ? "green" : "#D93025",
+                display: "block",
+                color: apiMessageType === "success" ? "#15803d" : "#D93025",
+                backgroundColor:
+                  apiMessageType === "success" ? "#ecfdf3" : "#fef2f2",
+                border:
+                  apiMessageType === "success"
+                    ? "1px solid #bbf7d0"
+                    : "1px solid #fecaca",
+                borderRadius: "10px",
+                padding: "10px 12px",
                 marginBottom: "15px",
                 textAlign: "center",
+                lineHeight: 1.4,
+                fontWeight: 600,
               }}
             >
-              {apiError}
+              {apiMessage}
             </small>
           )}
 
@@ -229,7 +311,10 @@ export default function SignupPage() {
               id="nome"
               name="nome"
               value={nome}
-              onChange={(e) => setNome(e.target.value)}
+              onChange={(e) => {
+                setNome(e.target.value);
+                if (nomeError) setNomeError("");
+              }}
               className={nomeError ? "error" : ""}
               required
             />
@@ -243,7 +328,10 @@ export default function SignupPage() {
               id="email"
               name="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (emailError) setEmailError("");
+              }}
               className={emailError ? "error" : ""}
               required
             />
@@ -257,7 +345,10 @@ export default function SignupPage() {
               id="senha"
               name="senha"
               value={senha}
-              onChange={(e) => setSenha(e.target.value)}
+              onChange={(e) => {
+                setSenha(e.target.value);
+                if (senhaError) setSenhaError("");
+              }}
               className={senhaError ? "error" : ""}
               required
             />
@@ -271,7 +362,10 @@ export default function SignupPage() {
               id="confirmar-senha"
               name="confirmar-senha"
               value={confirmarSenha}
-              onChange={(e) => setConfirmarSenha(e.target.value)}
+              onChange={(e) => {
+                setConfirmarSenha(e.target.value);
+                if (confirmarSenhaError) setConfirmarSenhaError("");
+              }}
               className={confirmarSenhaError ? "error" : ""}
               required
             />
@@ -308,19 +402,26 @@ export default function SignupPage() {
 
             <div
               id="crp-field"
-              className={role === "psicologo" ? "hidden-field visible" : "hidden-field"}
+              className={
+                role === "psicologo" ? "hidden-field visible" : "hidden-field"
+              }
             >
               <label htmlFor="crpState">Estado/Regional do CRP</label>
               <select
                 id="crpState"
                 name="crpState"
                 value={crpState}
-                onChange={(e) => setCrpState(e.target.value)}
+                onChange={(e) => {
+                  setCrpState(e.target.value);
+                  if (crpStateError) setCrpStateError("");
+                }}
                 className={crpStateError ? "error" : ""}
                 style={{
                   width: "100%",
                   padding: "12px 15px",
-                  border: crpStateError ? "1px solid #d93025" : "1px solid #dcdcdc",
+                  border: crpStateError
+                    ? "1px solid #d93025"
+                    : "1px solid #dcdcdc",
                   borderRadius: "8px",
                   marginBottom: "3px",
                   fontSize: "15px",
@@ -365,6 +466,168 @@ export default function SignupPage() {
                   }}
                 >
                   CRP completo: {fullCrp}
+                </small>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+                marginTop: "10px",
+                marginBottom: "4px",
+              }}
+            >
+              <label
+                htmlFor="acceptedLegal"
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "10px",
+                  color: "#374151",
+                  fontSize: "13px",
+                  lineHeight: 1.45,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  id="acceptedLegal"
+                  checked={acceptedLegal}
+                  onChange={(e) => {
+                    setAcceptedLegal(e.target.checked);
+                    if (acceptedLegalError) setAcceptedLegalError("");
+                  }}
+                  style={{
+                    width: "16px",
+                    height: "16px",
+                    marginTop: "2px",
+                    flexShrink: 0,
+                    accentColor: "#528cff",
+                  }}
+                />
+
+                <span>
+                  Li e aceito os{" "}
+                  <Link
+                    href="/legal#termos"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      color: "#001e5e",
+                      fontWeight: 700,
+                      textDecoration: "underline",
+                    }}
+                  >
+                    Termos de Uso
+                  </Link>{" "}
+                  e a{" "}
+                  <Link
+                    href="/legal#privacidade"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      color: "#001e5e",
+                      fontWeight: 700,
+                      textDecoration: "underline",
+                    }}
+                  >
+                    Política de Privacidade
+                  </Link>{" "}
+                  do PsicoConnect.
+                </span>
+              </label>
+
+              {acceptedLegalError && (
+                <small
+                  style={{
+                    color: "#d93025",
+                    fontSize: "12px",
+                    fontWeight: 500,
+                    lineHeight: 1.3,
+                    marginTop: "-4px",
+                  }}
+                >
+                  {acceptedLegalError}
+                </small>
+              )}
+
+              <label
+                htmlFor="acceptedSensitiveAi"
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "10px",
+                  color: "#374151",
+                  fontSize: "13px",
+                  lineHeight: 1.45,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  id="acceptedSensitiveAi"
+                  checked={acceptedSensitiveAi}
+                  onChange={(e) => {
+                    setAcceptedSensitiveAi(e.target.checked);
+                    if (acceptedSensitiveAiError) {
+                      setAcceptedSensitiveAiError("");
+                    }
+                  }}
+                  style={{
+                    width: "16px",
+                    height: "16px",
+                    marginTop: "2px",
+                    flexShrink: 0,
+                    accentColor: "#528cff",
+                  }}
+                />
+
+                <span>
+                  Autorizo o tratamento de{" "}
+                  <Link
+                    href="/legal#dados-sensiveis"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      color: "#001e5e",
+                      fontWeight: 700,
+                      textDecoration: "underline",
+                    }}
+                  >
+                    dados pessoais sensíveis
+                  </Link>{" "}
+                  necessários para uso da plataforma e compreendo os limites da{" "}
+                  <Link
+                    href="/legal#ia"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      color: "#001e5e",
+                      fontWeight: 700,
+                      textDecoration: "underline",
+                    }}
+                  >
+                    Inteligência Artificial
+                  </Link>{" "}
+                  no PsicoConnect.
+                </span>
+              </label>
+
+              {acceptedSensitiveAiError && (
+                <small
+                  style={{
+                    color: "#d93025",
+                    fontSize: "12px",
+                    fontWeight: 500,
+                    lineHeight: 1.3,
+                    marginTop: "-4px",
+                  }}
+                >
+                  {acceptedSensitiveAiError}
                 </small>
               )}
             </div>

@@ -6,6 +6,16 @@ export default function RootLayout({ children }: PropsWithChildren) {
   return (
     <html lang="pt-br">
       <head>
+        <title>PsicoConnect</title>
+        <meta
+          name="description"
+          content="Plataforma de apoio à prática psicológica."
+        />
+
+        <link rel="icon" href="/logo.png" type="image/png" />
+        <link rel="shortcut icon" href="/logo.png" type="image/png" />
+        <link rel="apple-touch-icon" href="/logo.png" />
+
         <link
           rel="stylesheet"
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"

@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcrypt";
+import { Prisma } from "@prisma/client";
 
 import {
   generateVerificationToken,
   sendVerificationEmail,
 } from "../../../lib/emails";
+import { LEGAL_VERSION } from "../../../lib/legal/legalContent";
 import prisma from "../../../lib/prisma";
 
 const crpRegionByState: Record<string, string> = {
@@ -34,22 +36,40 @@ const crpRegionByState: Record<string, string> = {
   AC: "24",
 };
 
+const GENERIC_SIGNUP_ERROR =
+  "Não foi possível concluir o cadastro no momento. Confira os dados e tente novamente.";
+
 const schema = z
   .object({
-    name: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
-    email: z.string().email("Email inválido"),
-    password: z.string().min(8, "Senha deve ter pelo menos 8 caracteres"),
-    confirmPassword: z.string().min(8),
-    role: z.enum(["PSICOLOGO", "PACIENTE"]),
+    name: z.string().min(2, "Informe um nome com pelo menos 2 caracteres."),
+    email: z.string().email("Informe um e-mail válido."),
+    password: z.string().min(8, "A senha deve ter pelo menos 8 caracteres."),
+    confirmPassword: z.string().min(8, "Confirme sua senha."),
+    role: z.enum(["PSICOLOGO", "PACIENTE"], {
+      error: "Selecione se o cadastro é de psicólogo ou paciente.",
+    }),
 
     crp: z.string().optional(),
     crpRegion: z.string().optional(),
     crpState: z.string().optional(),
     crpNumber: z.string().optional(),
+
+    acceptedLegal: z.boolean().optional().default(false),
+    acceptedSensitiveAi: z.boolean().optional().default(false),
   })
   .refine((data) => data.password === data.confirmPassword, {
     path: ["confirmPassword"],
-    message: "As senhas não coincidem",
+    message: "As senhas não coincidem.",
+  })
+  .refine((data) => data.acceptedLegal === true, {
+    path: ["acceptedLegal"],
+    message:
+      "Para criar sua conta, é necessário aceitar os Termos de Uso e a Política de Privacidade.",
+  })
+  .refine((data) => data.acceptedSensitiveAi === true, {
+    path: ["acceptedSensitiveAi"],
+    message:
+      "Para criar sua conta, é necessário autorizar o tratamento de dados sensíveis e compreender os limites do uso da Inteligência Artificial.",
   })
   .refine(
     (data) => {
@@ -59,7 +79,8 @@ const schema = z
     },
     {
       path: ["crpNumber"],
-      message: "Estado/Regional e número do CRP são obrigatórios para psicólogos.",
+      message:
+        "Informe o estado/regional e o número do CRP para concluir o cadastro como psicólogo.",
     },
   );
 
@@ -96,11 +117,55 @@ function buildCrpFromStateAndNumber(crpState: string, crpNumber: string) {
   };
 }
 
+function getFirstValidationMessage(error: z.ZodError) {
+  const firstIssue = error.issues.find((issue) => {
+    return typeof issue.message === "string" && issue.message.trim().length > 0;
+  });
+
+  return firstIssue?.message || "Alguns dados do cadastro precisam ser corrigidos.";
+}
+
+function getFriendlyPrismaError(error: unknown) {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
+    return null;
+  }
+
+  if (error.code === "P2002") {
+    const target = Array.isArray(error.meta?.target)
+      ? error.meta?.target.join(",")
+      : String(error.meta?.target || "");
+
+    if (target.includes("email")) {
+      return "Este e-mail já está em uso. Tente entrar na conta ou recuperar sua senha.";
+    }
+
+    if (target.includes("crp")) {
+      return "Este CRP já está cadastrado. Confira os dados informados.";
+    }
+
+    return "Já existe um cadastro com uma das informações informadas.";
+  }
+
+  return null;
+}
+
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const data = schema.parse(body);
+    let body: unknown;
 
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json(
+        {
+          error:
+            "Não foi possível ler os dados enviados. Atualize a página e tente novamente.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const data = schema.parse(body);
     const normalizedEmail = data.email.trim().toLowerCase();
 
     let psychologistCrpData: {
@@ -123,21 +188,40 @@ export async function POST(req: Request) {
 
     if (exists) {
       if (!exists.emailVerified) {
-        const verificationToken = await generateVerificationToken(exists.email);
+        try {
+          const verificationToken = await generateVerificationToken(exists.email);
 
-        await sendVerificationEmail(
-          verificationToken.email,
-          verificationToken.token,
-        );
+          await sendVerificationEmail(
+            verificationToken.email,
+            verificationToken.token,
+          );
 
-        return NextResponse.json(
-          { message: "Email já registrado. Email de verificação reenviado." },
-          { status: 200 },
-        );
+          return NextResponse.json(
+            {
+              ok: true,
+              message:
+                "Este e-mail já estava cadastrado, mas ainda não foi verificado. Enviamos um novo link de confirmação.",
+            },
+            { status: 200 },
+          );
+        } catch (emailError) {
+          console.error("Erro ao reenviar e-mail de verificação:", emailError);
+
+          return NextResponse.json(
+            {
+              error:
+                "Este e-mail já está cadastrado, mas não conseguimos reenviar a confirmação agora. Tente novamente em instantes.",
+            },
+            { status: 503 },
+          );
+        }
       }
 
       return NextResponse.json(
-        { error: "Este email já está em uso." },
+        {
+          error:
+            "Este e-mail já está em uso. Tente entrar na conta ou recuperar sua senha.",
+        },
         { status: 409 },
       );
     }
@@ -149,7 +233,10 @@ export async function POST(req: Request) {
 
       if (crpExists) {
         return NextResponse.json(
-          { error: "Este CRP já está cadastrado." },
+          {
+            error:
+              "Este CRP já está cadastrado. Confira os dados informados ou utilize outro cadastro.",
+          },
           { status: 409 },
         );
       }
@@ -160,61 +247,90 @@ export async function POST(req: Request) {
     const roleInEnglish =
       data.role === "PACIENTE" ? "PATIENT" : "PSYCHOLOGIST";
 
-    const user = await prisma.user.create({
-      data: {
-        name: data.name.trim(),
-        email: normalizedEmail,
-        passwordHash,
-        role: roleInEnglish,
-      },
-    });
+    const acceptedAt = new Date();
 
-    if (user.role === "PSYCHOLOGIST") {
-      if (!psychologistCrpData) {
-        return NextResponse.json(
-          { error: "Dados do CRP não informados." },
-          { status: 400 },
-        );
+    const user = await prisma.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: {
+          name: data.name.trim(),
+          email: normalizedEmail,
+          passwordHash,
+          role: roleInEnglish,
+
+          acceptedTermsAt: acceptedAt,
+          acceptedTermsVersion: LEGAL_VERSION,
+
+          acceptedPrivacyAt: acceptedAt,
+          acceptedPrivacyVersion: LEGAL_VERSION,
+
+          acceptedAiPolicyAt: acceptedAt,
+          acceptedAiPolicyVersion: LEGAL_VERSION,
+
+          acceptedSensitiveDataAt: acceptedAt,
+          acceptedSensitiveDataVersion: LEGAL_VERSION,
+        },
+      });
+
+      if (createdUser.role === "PSYCHOLOGIST") {
+        if (!psychologistCrpData) {
+          throw new Error("MISSING_CRP_DATA");
+        }
+
+        await tx.psychologist.create({
+          data: {
+            userId: createdUser.id,
+            crp: psychologistCrpData.crp,
+            crpRegion: psychologistCrpData.crpRegion,
+            crpState: psychologistCrpData.crpState,
+            crpNumber: psychologistCrpData.crpNumber,
+            crpVerificationStatus: "PENDING",
+            crpVerifiedAt: null,
+          },
+        });
+      } else {
+        await tx.patient.create({
+          data: {
+            userId: createdUser.id,
+          },
+        });
       }
 
-      await prisma.psychologist.create({
-        data: {
-          userId: user.id,
-          crp: psychologistCrpData.crp,
-          crpRegion: psychologistCrpData.crpRegion,
-          crpState: psychologistCrpData.crpState,
-          crpNumber: psychologistCrpData.crpNumber,
-          crpVerificationStatus: "PENDING",
-          crpVerifiedAt: null,
+      return createdUser;
+    });
+
+    try {
+      const verificationToken = await generateVerificationToken(user.email);
+
+      await sendVerificationEmail(
+        verificationToken.email,
+        verificationToken.token,
+      );
+    } catch (emailError) {
+      console.error("Erro ao enviar e-mail de verificação:", emailError);
+
+      return NextResponse.json(
+        {
+          ok: true,
+          warning: true,
+          message:
+            "Cadastro criado, mas não foi possível enviar o e-mail de verificação agora. Tente fazer login depois para reenviar a confirmação.",
         },
-      });
-    } else {
-      await prisma.patient.create({
-        data: {
-          userId: user.id,
-        },
-      });
+        { status: 202 },
+      );
     }
-
-    const verificationToken = await generateVerificationToken(user.email);
-
-    await sendVerificationEmail(
-      verificationToken.email,
-      verificationToken.token,
-    );
 
     return NextResponse.json({
       ok: true,
       message:
         user.role === "PSYCHOLOGIST"
-          ? "Registro concluído! Verifique o seu email. Após a confirmação, seu cadastro profissional ficará aguardando análise do CRP."
-          : "Registro concluído! Verifique o seu email.",
+          ? "Cadastro concluído! Verifique seu e-mail. Após a confirmação, seu cadastro profissional ficará aguardando análise do CRP."
+          : "Cadastro concluído! Verifique seu e-mail para ativar sua conta.",
     });
   } catch (e: any) {
     if (e instanceof z.ZodError) {
       return NextResponse.json(
         {
-          error: "Dados de validação inválidos",
+          error: getFirstValidationMessage(e),
           details: e.flatten().fieldErrors,
         },
         { status: 400 },
@@ -223,22 +339,46 @@ export async function POST(req: Request) {
 
     if (e?.message === "INVALID_CRP_STATE") {
       return NextResponse.json(
-        { error: "Estado/Regional do CRP inválido." },
+        {
+          error:
+            "Estado/regional do CRP inválido. Confira o estado selecionado e tente novamente.",
+        },
         { status: 400 },
       );
     }
 
     if (e?.message === "INVALID_CRP_NUMBER") {
       return NextResponse.json(
-        { error: "Número do CRP inválido." },
+        {
+          error:
+            "Número do CRP inválido. Informe apenas os números do registro profissional.",
+        },
         { status: 400 },
       );
     }
 
-    console.error(e);
+    if (e?.message === "MISSING_CRP_DATA") {
+      return NextResponse.json(
+        {
+          error:
+            "Não foi possível concluir o cadastro profissional porque os dados do CRP não foram informados corretamente.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const prismaError = getFriendlyPrismaError(e);
+
+    if (prismaError) {
+      return NextResponse.json({ error: prismaError }, { status: 409 });
+    }
+
+    console.error("Erro inesperado no cadastro:", e);
 
     return NextResponse.json(
-      { error: "Erro interno do servidor" },
+      {
+        error: GENERIC_SIGNUP_ERROR,
+      },
       { status: 500 },
     );
   }
